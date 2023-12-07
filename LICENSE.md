@@ -1,1 +1,0 @@
-This package is still under development and so no license has been selected

@@ -1,19 +1,15 @@
-# CPT-SCRAPE
-[cpt-scrape] is a library used to extract cone penetration test (CPT) data which are stored in
-GEF files. 
-
-# cpt-scrape
-============================================================================
-
-[cpt-scrape] is a library used to extract cone penetration test (CPT) data which are stored in
-GEF files. Its core is readGEF.py which uses the class [GEF] to scrape the CPT data. Within this
-module are under functions which may be particularly useful. All other modules are just fancy 
-add-on's.
+# CPyT
+`CPyT` is a Python package used to scrape, process and interpret cone penetration test (CPT) data. 
 
 
-# Quick start
+
+# Requirements
+
 -----------
 
+# Quick start
+
+-----------
 
 
 # Disclaimer
