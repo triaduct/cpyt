@@ -124,7 +124,7 @@ def Ic(df):
 
     """
     df = normalised_features(df)
-    df["Ic"] = ((3.47 - np.log(df.Qtl))**2 + (np.log(df.Fr)+1.22)**2)**0.5
+    df["Ic"] = ((3.47 - np.log10(df.Qtl))**2 + (np.log10(df.Fr)+1.22)**2)**0.5
     return df
 
 #%%
