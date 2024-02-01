@@ -2,7 +2,6 @@
 `CPyT` is a Python package used to scrape, process and interpret cone penetration test (CPT) data. 
 
 
-
 # Requirements
 
 -----------

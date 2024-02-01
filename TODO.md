@@ -12,5 +12,6 @@ These are ideas/suggestions that can be picked up by anyone working on the proje
 ## In Progress
 - [ ] Adding a module to include CPT correlations @kevin 07/12/23
 - [ ] Add Robertson charts and classify soil accordingly @kevin 07/12/23
+	- 15/01/24: needs to be cleaned up a little
 
 ## Done

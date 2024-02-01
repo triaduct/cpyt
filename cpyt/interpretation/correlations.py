@@ -8,6 +8,11 @@ This deals with the dataframe output of the CPT class.
 """
 import pandas as pd, numpy as np
 # from read_cpt import CPT
+from scipy.optimize import brentq
+import matplotlib.pyplot as plt
+import os
+
+imgDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images\\')
 
 #%% 
 def qt(df, u2=False, a=None):
@@ -18,31 +23,81 @@ def qt(df, u2=False, a=None):
     
     Returns qt in MPa
     """
-    if "u2" in df.columns:
+    if ("u2" not in df.columns):
+        print("No u2 present in dataframe. No correction applied in deriving q_t")
+        df["qt"] = df["qc"]
+    elif pd.isnull(df.u2).all():
+        print("No u2 present in dataframe. No correction applied in deriving q_t")
+        df["qt"] = df["qc"]
+    else:
         if a == None:
             print("The net area ratio has not been specified in deriving q_t")
             print("---> The default value of 0.8 has been assumed")
             a = 0.8
         df["qt"] = df.qc + (df.u2/1000)*(1-a)
-    else:
-        print("No u2 present in dataframe. No correction applied in deriving q_t")
-        df["qt"] = df["qc"]
     
     return df
 
 #%%
-def uw(df,which="lengkeek et al_2018"):
+def Rf(df):
+    if "qt" in df.columns:
+        df["Rf"] = (df.fs/df.qt)*100
+    else:
+        df["Rf"] = (df.fs/df.qc)*100
+    
+    return df
+
+#%%
+def gammaSat(df,which="lengkeek et al_2018"):
     if "qt" not in df.columns:
         raise ValueError("Insert qt into dataframe")
         
-    df["uw"] = np.nan
-    df.loc[df.qc == 0].uw = 0
-    df.loc[df.Rf == 0].uw = 0
-    if which == "lengkeek et al_2018":
-        def uw_lengkeek(row):
-            row.uw = 19-4.12*(np.log10(5/row.qt)/np.log10(30/row.Rf))
+    df["gammaSat"] = np.nan
+    df.loc[df.qc == 0].gammaSat = 0
+    df.loc[df.Rf == 0].gammaSat = 0
+    
+    if which == "simple":       
+        """
+        Generally applied when no fs information is available. Note that
+        this is a gross simplification and assumes just sand and/or clay.
+        
+        Taken from  NEN9997-1 Table 2b
+        
+        #TODO: Interpolate between the values
+        """
+        # Sand
+        df.loc[(df.qc >= 5) & (df.qc < 15)].gammaSat = 19   # Loose sand
+        df.loc[(df.qc >= 15) & (df.qc < 25)].gammaSat = 20
+        df.loc[(df.qc >= 25)].gammaSat = 21                 # Dense sand
+        
+        # Clay
+        df.loc[(df.qc < 0.5)].gammaSat = 14                 # Soft clay
+        df.loc[(df.qc >= 0.5) & (df.qc < 1)].gammaSat = 17  
+        df.loc[(df.qc >= 1) & (df.qc < 2)].gammaSat = 19    # Stiff clay
+        df.loc[(df.qc >= 2) & (df.qc < 5)].gammaSat = 20    # Clayey sand
+        
+    elif which == "lengkeek et al_2018":
+        """
+        Was an enhancement of the Robertson & Cabal (2010) correlation to better
+        account for soft soils and peats in the Netherlands
+        """
+        def gammaSat_lengkeek(row):
+            row.gammaSat = 19-4.12*(np.log10(5/row.qt)/np.log10(30/row.Rf))
             return row
-        df = df.apply(uw_lengkeek, axis=1)  
+        df = df.apply(gammaSat_lengkeek, axis=1)  
+    
+    elif which == "robertson and cabal_2010":
+        """
+        Was an enhancement of the Robertson & Cabal (2010) correlation to better
+        account for soft soils and peats in the Netherlands
+        """
+        pa = 0.101      # [MPa]
+        gamma_w = 10    # Unit weight of water[kN/m3] 
+        def gammaSat_robCab(row):
+            row.gammaSat = (0.27*np.log10(row.Rf) + 0.36*np.log10(row.qt/pa) + 1.236)/gamma_w
+            return row
+        df = df.apply(gammaSat_robCab, axis=1)  
+        
     df = df.replace([np.inf, -np.inf], 0)
         
     return df
@@ -56,16 +111,20 @@ def sig_eff(df, water_table=1,sea_level=False):
                     ["qc","fs",Rf","z"]
     :water_table:   Depth of the water table relative to surface Assumed to be 1m 
                     below surface unless otherwise specified
-        :
+    :sea_level:     Height of sea_level above surface. If float is specified, water_table=0.
+    NOTE: sig_eff assumes the CPT penetrates from the surface and no pre-drilling
+    has occurred
     """
-    if "uw" not in df.columns:
-        raise ValueError("Insert uw into dataframe")
+    if "gammaSat" not in df.columns:
+        raise ValueError("Insert gammaSat into dataframe")
     if "qt" not in df.columns:
         raise ValueError("Insert qt into dataframe")
     
     if water_table == 1:
         if sea_level == False:
             print("Default water table (1m below surface) has been used to calculate effective stress")
+    if abs(water_table) != water_table:
+        print("Note: :water_table: input takes a positive value (i.e. +1m below surface)")
     if sea_level:       # Include the sea_level into the effective stress calculation
         water_table = 0     # Ground water should always be at surface if offshore
         seawater_density = 10.0910 # kN/m3
@@ -73,18 +132,20 @@ def sig_eff(df, water_table=1,sea_level=False):
     else:
         surcharge = 0
 
+    df["pen"] = (df.z - df.z.iloc[0])*-1
     df["depth_diff"] = abs(df.pen.diff())
-     
+    df["sig_contrib"] = np.nan
+    df["sig_eff_contrib"] = np.nan
     def sig_eff_contrib(row):
         """ 
         Function that calculates each row's contribution to the effective stress
         """
             
-        if row.pen < water_table:
-            row["sig_eff_contrib"] = row.uw*row.depth_diff
-        if row.pen >= water_table: 
-            row["sig_eff_contrib"] = row.uw*row.depth_diff - 10*row.depth_diff
-        row["sig_contrib"] = row.uw*row.depth_diff
+        if row.pen < water_table:       # If above water table
+            row["sig_eff_contrib"] = row.gammaSat*row.depth_diff
+        if row.pen >= water_table:      # If below water table
+            row["sig_eff_contrib"] = row.gammaSat*row.depth_diff - 10*row.depth_diff
+        row["sig_contrib"] = row.gammaSat*row.depth_diff
         return row
     
     df = df.apply(sig_eff_contrib, axis=1)          # Contribution of each row to eff. stress
@@ -106,74 +167,154 @@ def qnet(df):
     return df
     
 #%%
-def normalised_features(df):
-    if "sig_eff" not in df.columns:
-        df = sig_eff(df)
-    if "qt" not in df.columns:
-        df = qt(df, u2=False, a=0.8)
+def Ic(df, plot=False,chart="robertson_1990_normalised"):
+    """
+    Includes calculation of the stress exponent :n: as listed in Eq. 7 of Robertson, 2009.
+    The value of :n: is typically 1.0 for fine-grained soils, and ranges from
+    0.5 (dense sand) to 0.9 (loose sand) for most coarse-grained soils. If 
+    sig_eff > 1MPa, then the stress exponent will be essentially 1.0 for most soils
     
-    # Robertson 1990
-    df["Qtl"] = (df.qt*1000 - df.sig)/df.sig_eff
-    df["Fr"] = ((df.fs*1000)/(df.qt*1000-df.sig))*100        # In [%]
+    Robertson, 2009
+    Also includes the normalised features Qtn and Fr
+    From Bruno Stuyts
+    """
+    def Ic_func(qt, fs, sig, sig_eff,z):
+        try:
+            pa=101.0        # Atmospheric pressure [kPa]
+
+            def Qtn(qt, sig, sig_eff, n, pa=0.001 * pa):
+                return ((qt - 0.001 * sig) / pa) * ((pa / (0.001 * sig_eff)) ** n)
+        
+            def Fr(fs, qt, sig):
+                return 100 * (fs / (qt - 0.001 * sig))
+        
+            def stress_exponent(ic, sig_eff, pa):
+                return min(1, 0.381 * ic + 0.05 * (sig_eff / pa) - 0.15)
+        
+            def soilbehaviourtypeindex(qt, fr):
+                return np.sqrt((3.47 - np.log10(qt)) ** 2 + (np.log10(fr) + 1.22) ** 2)
+        
+            def rootfunction(ic, qt, fs, sig, sig_eff):
+                _fr = Fr(fs, qt, sig)
+                _n = stress_exponent(ic, sig_eff,pa)
+                _qtn = Qtn(qt, sig, sig_eff, _n)
+                return ic - soilbehaviourtypeindex(_qtn, _fr)
+        
+            Ic_min=1.0
+            Ic_max=4.0      # Search for the solution between ic_min and ic_max
+            _Ic = brentq(rootfunction, Ic_min, Ic_max, args=(qt, fs, sig, sig_eff))
+            _exponent_zhang = stress_exponent(_Ic, sig_eff, pa)
+            _Qtn = Qtn(qt, sig, sig_eff, _exponent_zhang)
+            _Fr = Fr(fs, qt, sig)
+
+        except:
+            _Ic = np.nan
+            _Qtn = np.nan
+            _Fr = np.nan
+    
+        return _Ic, _Qtn, _Fr
+    
+    df["Ic"] = np.nan
+    df["Qtn"] = np.nan
+    df["Fr"] = np.nan
+    for index,row in df.iterrows():
+        Ic, Qtn, Fr = Ic_func(row.qt,row.fs,row.sig,row.sig_eff,row.z)
+        df.Ic.iloc[index] = Ic
+        df.Qtn.iloc[index] = Qtn
+        df.Fr.iloc[index] = Fr
+     
+    if plot:
+        fig = plt.figure(figsize=(5,5))
+        ax = fig.gca()
+        
+        # Include Robertson chart as background; Need to make adjustments as [ax] is on a log scale
+        ax_tw_x = ax.twinx()
+        ax_tw_x.axis('off')
+        ax2 = ax_tw_x.twiny()
+        
+        
+        img = plt.imread(imgDir + chart + ".PNG")
+        ax2.imshow(img,extent=[1,10,1,1000], aspect="auto")
+        ax2.axis('off')
+            
+        ax.scatter(df["Fr"],df["Qtn"],ec="k",alpha=0.6,s=10)
+
+        ax.set_xlabel(r"Normalised friction ratio, $F_r$ [%]")
+        ax.set_ylabel(r"Normalised cone resistance, $Q_{tn}$ [-]")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlim(0.1,10)
+        ax.set_ylim(1,1000)
+        # ax.ticklabel_format(useOffset=False, style='plain')    # Don't use scientific notation
+        ax.set_xticks([0.1,1,10])
+        ax.set_yticks([1,10,100,1000])
+        ax.patch.set_facecolor('None')      # No background on axis
+        ax.set_zorder(ax2.get_zorder()+1)   # Show scatter points above plot
+        plt.show()
     
     return df
 
-#%%
-def Ic(df):
-    """
-
-    """
-    df = normalised_features(df)
-    df["Ic"] = ((3.47 - np.log10(df.Qtl))**2 + (np.log10(df.Fr)+1.22)**2)**0.5
-    return df
 
 #%%
-def Isbt(df):
+def Isbt(df,plot=False,chart="robertson_1990_nonnormalised"):
     """
-    Function which appends the Non-normalised soil behaviour index. 
+    Function which appends the Non-normalised soil behaviour index (see Robertson, 2010)
     :df:            The CPT information. Columns need to be labelled 
                     ["qc","fs",Rf","z"]
+                     
+    For in-situ effctive stresses between 50-150kPa there is little difference between the
+    non-normalised I_sbt and the normalised I_c (Robertson, 2010)
     """
-    if "Rf" not in df:
-        df["Rf"] = (df.fs/df.qc)*100
+    if "Rf" not in df.columns:
+        raise ValueError("Please add Rf first before calculating Isbt")
+        
+    df.fs.loc[df.fs == 0] = np.nan  # Used to hide warnings caused by np.log10
+    df.Rf.loc[df.Rf == 0] = np.nan  # Used to hide warnings caused by np.log10
+
     pa = 0.1                        # Atmospheric pressure in MPa
     np.seterr(divide = 'ignore')    # Hide warning made by fs = 0 to make output cleaner
     df["Isbt"] = ((3.47 - np.log10(df.qc/pa))**2 + (np.log10(df.Rf)+1.22)**2)**0.5
     
-    return 
+    if plot:
+        fig = plt.figure(figsize=(5,5))
+        ax = fig.gca()
+        
+        # Include Robertson chart as background; Need to make adjustments as [ax] is on a log scale
+        ax_tw_x = ax.twinx()
+        ax_tw_x.axis('off')
+        ax2 = ax_tw_x.twiny()
+        img = plt.imread(imgDir + chart + ".PNG")
+        ax2.imshow(img,extent=[1,10,1,1000], aspect="auto")
+        ax2.axis('off')
+        
+        if chart == "robertson_1990_nonnormalised":
+            ax.scatter(df.Rf,df.qc/pa,ec="k",alpha=0.6,s=10)
+        elif chart == "robertson_1986_nonnormalised":
+            ax.scatter(df.Rf,df.qc,ec="k",alpha=0.6,s=10)
+        ax.set_xlabel(r"Friction ratio, $R_f$ [%]")
+        ax.set_ylabel(r"Cone resistance, $q_c \slash p_a$ [-]")
 
-#%%
-def Qtn(df, n = "robertson_2009"):
-    pa = 100        # [kPa]
-    if "sig_eff" not in df.columns:
-        df = sig_eff(df)
-    
-    # Stress exponent [-]
-    """ 
-    The stress exponent is typically 1.0 for fine-grained soils, and ranges from
-    0.5 (dense sand) to 0.9 (loose sand) for most coarse-grained soils. If 
-    sig_eff > 1MPa, then the stress exponent will be essentially 1.0 for most soils
-    """
-    if n == "robertson_2009":      # Calculate n based on Robertson 2009
-        df = Ic(df)
-        n = 0.381*df.Ic + 0.05*(df.sig_eff/pa) - 0.15
-        n.loc[n>1] = 1
-
-    df["Qtn"] = ((df.qt-df.sig/1000)/(pa/1000))*((pa/df.sig_eff)**n)      # Normalised CPT resistance, corrected for overburden pressure
+        if chart == "robertson_1990_nonnormalised":
+            ax.set_xlim(0.1,10)
+            ax.set_xticks([0.1,1,10])
+            ax.set_ylim(1,1000)
+            ax.set_yticks([1,10,100,1000])
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+        elif chart == "robertson_1986_nonnormalised":
+            ax.set_xlim(0,8)
+            # ax.set_xticks([0.1,1,10])
+            ax.set_ylim(0.1,100)
+            ax.set_yticks([1,10,100]) 
+            ax.set_yscale("log")
+        # ax.ticklabel_format(useOffset=False, style='plain')    # Don't use scientific notation
+        
+        ax.patch.set_facecolor('None')      # No background on axis
+        ax.set_zorder(ax2.get_zorder()+1)   # Show scatter points above plot
+        plt.show()
     
     return df
-#%%
-def normalised_qc_Rf(df, u2=False, a=0.8, water_table=1):
-    """
-    Gets the normalised cone resistance
-    """
-    if "sig_eff" not in df.columns:
-        df = sig_eff(df)
-    
-    df["Qt"] = (df.qt*1000 - df.sig)/df.sig_eff
-    df["nFr"] = (df.fs*1000/(df.qt*1000-df.sig))*100
-    
-    return df
+
 
 #%%
 def friction_angle(df):
@@ -298,7 +439,7 @@ def G0(df,method="constant alpha", alpha=5.77,v=0.2,K_g = 300):
         
  
     elif method == "robertson_2009":
-        if "u2" not in df.columns:
+        if "Ic" not in df.columns:
             raise ValueError("u2 is need to apply the Robertson (2009) correlation")
         if v == 0.2:
             print("A Poisson's ratio of 0.2 for sand has been assumed")
@@ -311,10 +452,8 @@ def G0(df,method="constant alpha", alpha=5.77,v=0.2,K_g = 300):
         # for cemented sands
         if "sig_eff" not in df.columns:
             raise ValueError("sig_eff is need to apply the Schnaid et al. (2004) correlation")
-            
         pa = 101.3  # kPa
         df["G0"] = (K_g*(df.qc*df.sig_eff*pa))**(1/3)
-        # raise ValueError("Korrelation needs to be double-checked")
         
     elif method == "schneider & moss_2011":
         """
@@ -332,4 +471,5 @@ def G0(df,method="constant alpha", alpha=5.77,v=0.2,K_g = 300):
         
     else:
         raise ValueError("Method has not been specified")
+        
     return df

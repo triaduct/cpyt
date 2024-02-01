@@ -13,7 +13,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-
 #%%
 class CPT:
     def __init__(self):
@@ -63,7 +62,8 @@ class CPT:
         
         col_sep = ";"          # Column separator/delimiter
         rec_sep = "\n"         # Record separator
-        col_void = dict(zip(list(range(1,12)),[9999.0]*11))         # 9999.0 typically used to represent NaN in GEF files
+        # col_void = dict(zip(list(range(1,12)),[9999.0]*11))         # 9999.0 typically used to represent NaN in GEF files
+        col_void = {}
         _columns = {}           # Structure: {:dtype:, :column #:}
         mvar = {}               # For storing #MEASUREMENTVAR
         mtext = {}               # For storing #MEASUREMENTTEXT
@@ -136,7 +136,7 @@ class CPT:
                 args = line.split(col_sep)
             
                 args = list(filter(None, args))
-                args = [np.nan if float(value) == col_void[i] else value for i,value in enumerate(args)]    # replace zero values
+                args = [np.nan if float(value) == col_void[i] else float(value) for i,value in enumerate(args)]    # replace zero values
                 
                 for dtype, col_id in _columns.items():
                     self.__dict__[GEF_COL_DTYPE[dtype]].append(float(args[col_id]))     # Appends to class attribute based on dtype
@@ -298,13 +298,14 @@ class CPT:
 #%%
 if __name__ == "__main__":
     import os
-    dataFolder = "C:\\Users\\kduffy\\Downloads\\cpt\\"
+    dataFolder = "C:\\Users\\kduffy\\Downloads\\cpt_oostwoud\\"
     
     for cpt in os.listdir(dataFolder):
-        if cpt.split(".")[-1] == "gef":
+        if cpt.split(".")[-1] == "GEF":
             g = CPT()
             g.readGEF(dataFolder + cpt)
             df = g.asDataFrame()
+            df.to_csv(dataFolder + cpt + ".csv")
             g.plot("delete")
 
 
