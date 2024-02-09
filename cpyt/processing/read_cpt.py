@@ -61,7 +61,7 @@ class CPT:
                          12: "time"}        # See deltares_gef explanation.pdf for dtypes
         
         col_sep = ";"          # Column separator/delimiter
-        rec_sep = "\n"         # Record separator
+        rec_sep = "\n"         # Record separator. Separates each line from one another
         # col_void = dict(zip(list(range(1,12)),[9999.0]*11))         # 9999.0 typically used to represent NaN in GEF files
         col_void = {}
         _columns = {}           # Structure: {:dtype:, :column #:}
@@ -117,6 +117,9 @@ class CPT:
                     col_sep = args[-1]
                 elif keyword == "#RECORDSEPARATOR":
                     rec_sep = args[-1]
+                # elif keyword == "#DATAFORMAT":
+                #     if args[-1] == "ASCII":
+                #         rec_sep = args[-1]
                 elif keyword == "#COLUMNVOID":
                     col_void[int(args[0])-1] = float(args[-1])    # args[0] = column number; args[-1] = outlier number. -1 as indexing in .gef starts at 1
                 elif keyword == "#MEASUREMENTVAR":
@@ -134,6 +137,8 @@ class CPT:
                 line=line.strip("\n")   # Some GEF files don't specify RECORDSEPARATOR but put \n in its place
                 line=line.strip(rec_sep)
                 args = line.split(col_sep)
+                if len(args) <= 1:          # 
+                    args = line.split(" ") 
             
                 args = list(filter(None, args))
                 args = [np.nan if float(value) == col_void[i] else float(value) for i,value in enumerate(args)]    # replace zero values
@@ -298,14 +303,15 @@ class CPT:
 #%%
 if __name__ == "__main__":
     import os
-    dataFolder = "C:\\Users\\kduffy\\Downloads\\cpt_oostwoud\\"
+    dataFolder = "C:\\Users\\kduffy\\Downloads\\Newer folder\\"
+    gef_file = "sample-cpt.gef"
     
     for cpt in os.listdir(dataFolder):
         if cpt.split(".")[-1] == "GEF":
             g = CPT()
             g.readGEF(dataFolder + cpt)
             df = g.asDataFrame()
-            df.to_csv(dataFolder + cpt + ".csv")
+            df.to_csv(dataFolder + cpt.strip(".GEF") + ".csv")
             g.plot("delete")
 
 

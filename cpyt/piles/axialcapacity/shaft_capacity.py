@@ -32,7 +32,7 @@ All functions have the same structure:
 import pandas as pd, numpy as np
 import matplotlib.pyplot as plt
 
-from cpyt.interpretation import correlations,classify_cpt
+from cpyt.interpretation import correlations,classify
 from cpyt.processing.read_cpt import CPT
 
 

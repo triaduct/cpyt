@@ -4,7 +4,7 @@ the Discussion section. Just use this file to either list what you're working on
 or some useful things that shoul
 
 
-## General TO-DO 
+## General
 These are ideas/suggestions that can be picked up by anyone working on the project.
 - [ ] Create a tutorial for `CPT.readGEF`
 - [ ] Add CPyT to PyPI

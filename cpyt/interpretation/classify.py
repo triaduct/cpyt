@@ -40,3 +40,4 @@ def Rf_based(cpt,incl_silt=False):
     cpt.loc[cpt.Rf > 2,"soil_type"] = "clay"
     
     return cpt
+
