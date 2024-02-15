@@ -119,6 +119,26 @@ def lcpc(cpt, pile_dia, target_depth):
     return qc_avg
 
 
+def lpc_2012(cpt, pile_dia, target_depth, top_bearing_layer):
+    """
+    Similar to the original 1.5D LCPC method. Used in the French design method AFNOR
+    
+    Only qc values within the :bearing_layer: are considered
+    
+    See Verheyde, 2019
+    """
+    z_above = max(0.5*pile_dia,0.5)  # z_above has to be at least 0.5m. 
+    z_below = max(1.5*pile_dia,1.5)  # z_below has to be at least 1.5m. 
+    
+    D15_05 = cpt[(cpt.z >= target_depth - z_below) & (cpt.z <= target_depth + z_above)]   # 1.5 diameters below pile tip, 0.5 dia above
+    D15_05.loc[cpt.z > top_bearing_layer,"qc"] = np.nan   # Exclude any values not in the bearing layer
+    qcm = D15_05.qc.mean()
+    D15_05.loc[D15_05.qc > 1.3*qcm,"qc"] = 1.3*qcm      # Limit qc values to 1.3*qcm
+    qce = D15_05.qc.mean()      # Equivalent tip resistance
+    
+    return qce    
+
+
 def de_boorder(cpt, pile_dia, target_depth):
     HD_a = 8.3              # Distance over which the cosine function is applied above the pile
     HD_b = 15.5             # "..." below the pile
@@ -205,7 +225,10 @@ def fleming_and_thorburn(cpt,pile_dia, target_depth):
     Piling and Ground Treatment for Foundations, ICE London, pp 1-16.
     
     Can't find this paper. Use Bazu et al. 2010 for reference. Used in designing
-    for screw displacement piles in the USA
+    for screw displacement piles in the USA.
+    
+    4D below the pile tip was used specifically for the purpose of determing the 
+    capacity of screw displacement piles, as per NeSmith, 2002
     """
     D4_below = cpt[(cpt.z > target_depth - 4*pile_dia) & (cpt.z <= target_depth)]   # 4D below pile tip
     D4_above = cpt[(cpt.z >= target_depth) & (cpt.z < target_depth + 4*pile_dia)]   # 4D above pile tip

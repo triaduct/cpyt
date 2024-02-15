@@ -68,8 +68,7 @@ def alpha_method(cpt,z_base,alpha_p, avg_method,
             print("A custom base limiting resistance has been applied")
             qb_lim = limit_qb
         
-        if qbmax > qb_lim:
-            qbmax = limit_qb
+        qbmax = min(qb_lim,qbmax)
             
     Qbmax = (qbmax*1000*area)   # Max pile tip capacity [kN]
 
@@ -116,8 +115,7 @@ def nen9997_2017(cpt,z_base,pile_type,pile_h=np.nan, pile_b=np.nan, pile_dia=np.
             print("A custom base limiting resistance has been applied")
             qb_lim = limit_qb
         
-        if qbmax > qb_lim:
-            qbmax = limit_qb
+        qbmax = min(qb_lim,qbmax)
             
     Qbmax = qbmax*1000*area   # Max pile tip capacity [kN]
 
@@ -131,11 +129,16 @@ def nen9997_2017(cpt,z_base,pile_type,pile_h=np.nan, pile_b=np.nan, pile_dia=np.
         print("_________________________________________")
         return Qbmax
 
-def afnor_2012(cpt,z_base,pile_type,soil_type,
+def afnor_2012(cpt,z_base,pile_type,soil_type,top_bearing_layer,
                pile_h=np.nan, pile_b=np.nan, pile_dia=np.nan, 
+               bearing_factor=True,
                alpha_p=None,result="stress"):
     """
     Specify equivalent diameter area if square pile
+    
+    :top_bearing_layer: is needed to use the lpc_2012 averaging method. More details
+    in (Verheyde & Baguelin, 2019)
+    :bearing_factor:    Takes into account short embedment depth
     """
     print("_________________________________________")
     print("Calculating base capacity using the AFNOR design method ...\n")
@@ -146,6 +149,7 @@ def afnor_2012(cpt,z_base,pile_type,soil_type,
     if np.isnan(pile_dia) == True:                                       # i.e. if the pile is rectangular
         area = pile_h*pile_b
         pile_dia = ((area/np.pi)**0.5)*2        # Equivalent diameter
+        print("TOFIX: AFNOR does not use equivalent diameter when considering the embedmeent length (see :bearing_factor:")
     
     
     kc_dict_sand = {"driven_closed_ended": 0.40,
@@ -161,16 +165,35 @@ def afnor_2012(cpt,z_base,pile_type,soil_type,
                        "screw_pile_with_casing": 0.50
                        }
     
-    qc_avg = averaging_methods.lcpc(cpt, pile_dia,z_base)
-    print("WARNING: Adjusted LCPC method need for AFNOR to account for weak overlying soil")
-    
     if soil_type == "sand":
-        kc = kc_dict_sand[pile_type]
+        kcmax = kc_dict_sand[pile_type]
     if soil_type == "silt":
-        kc = kc_dict_inter[pile_type]
+        kcmax = kc_dict_inter[pile_type]
     if soil_type == "clay":
-        kc = kc_dict_clay[pile_type]
-        
+        kcmax = kc_dict_clay[pile_type]
+    
+    qc_avg = averaging_methods.lpc_2012(cpt, pile_dia,z_base,top_bearing_layer)         # Referred to as q_ce in AFNOR
+    
+    if bearing_factor:
+        qc_avg_upper = cpt[(cpt.z <= z_base + 10*pile_dia) & (cpt.z >= z_base)].qc.mean()
+        if qc_avg_upper >= 0.5*qc_avg:
+            kc = kcmax
+        else:
+            # Calculate reduced bearing factor
+            z_base_less_10D = z_base - 10*pile_dia
+            qc_10D_below = cpt[(cpt.z <= z_base) & (cpt.z >= z_base_less_10D)].qc.mean()
+            D_ef = (1/qc_avg)*qc_10D_below
+            if D_ef/pile_dia > 5:
+                kc = kcmax
+            else:
+                if soil_type == "sand":
+                    kc = 0.3 + (kcmax - 0.3)*(D_ef/pile_dia)/5
+                elif soil_type == "silt":
+                    kc = 0.3 + (kcmax - 0.2)*(D_ef/pile_dia)/5
+                elif soil_type == "clay":
+                    kc = 0.3 + (kcmax - 0.1)*(D_ef/pile_dia)/5
+    else:   
+        kc = kcmax
     qbmax = qc_avg*kc    # Maximum pile tip resistance [MPa]
             
     Qbmax = (qbmax*1000*area)   # Max pile tip capacity [kN]
@@ -186,7 +209,8 @@ def afnor_2012(cpt,z_base,pile_type,soil_type,
         return Qbmax
     
     
-def nesmith_2002(cpt, z_base, pile_dia, wb=1.34, limit_qc_avg=True,
+def nesmith_2002(cpt, z_base, pile_dia, wb=0, limit_qc_avg=True,
+                 limit_qb = True,
                  result="stress"):
     """
     Method be NeSmith for screw displacement piles in sandy soils.
@@ -212,10 +236,17 @@ def nesmith_2002(cpt, z_base, pile_dia, wb=1.34, limit_qc_avg=True,
         qc_avg = 19
     
     alpha_p = 0.4
-    qbmax = qc_avg*alpha_p    # Maximum pile tip resistance [MPa]
+    qbmax = qc_avg*alpha_p + wb    # Maximum pile tip resistance [MPa]
+    
+    if limit_qb == True:
+        # qb_lim needs to be interpolated between 7.2 and 8.62
+        wb_perc = wb/1.34
+        qblim = 7.2 + wb_perc*(8.62 - 7.2) 
+        print("QB LIM " + str(qblim))
+        qbmax = min(qblim,qbmax)
+
     Qbmax = (qbmax*1000*area)   # Max pile tip capacity [kN]
-
-
+    
     if result=="stress":
         print(f"The pile base capacity at {z_base:.2f} m is {qbmax:.2f} MPa")
         print("_________________________________________")

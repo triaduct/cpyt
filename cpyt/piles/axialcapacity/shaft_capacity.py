@@ -115,7 +115,7 @@ def nen9997_2017(cpt, pile_type, z_top, z_base, h=np.nan, b=np.nan, pile_dia=np.
     cpt.reset_index(drop=True,inplace=True)
     near_z_ix = cpt.z.sub(z_base).abs().idxmin()           # Index of row with depth closest to pile depth
     Qsmax = cpt.Qsmax.iloc[near_z_ix]                  # Shaft capacity in kN
-    qsmax = (Qsmax/1000)/surf_area                       # Shaft capacity in MPa
+    qsmax = Qsmax/surf_area                         # Shaft capacity in kPa
     
     if result=="stress":
         print(f"The pile shaft capacity is {qsmax:.2f} kPa")
@@ -165,7 +165,7 @@ def doan_lehane_2021(cpt, z_top, z_base,pile_dia,
     cpt.reset_index(drop=True,inplace=True)
     near_z_ix = cpt.z.sub(z_base).abs().idxmin()        # Index of row with depth closest to pile depth
     Qsmax = cpt.Qsmax.iloc[near_z_ix]                   # Shaft capacity in kN
-    qsmax = (Qsmax/1000)/surf_area                      # Shaft capacity in MPa
+    qsmax = Qsmax/surf_area                             # Shaft capacity in kPa
     
     if result=="stress":
         print(f"The pile shaft capacity is {qsmax:.2f} kPa")
@@ -236,9 +236,9 @@ def uwa05(cpt, pile_type, z_top, z_base,
     cpt["Qsmax"] = cpt.Qsmax_contrib.cumsum()
 
     cpt.reset_index(drop=True,inplace=True)
-    near_z_ix = cpt.z.sub(z_base).abs().idxmin()           # Index of row with depth closest to pile depth
-    Qsmax = cpt.Qsmax.iloc[near_z_ix]                  # Shaft capacity in kN
-    qsmax = (Qsmax/1000)/surf_area                       # Shaft capacity in MPa
+    near_z_ix = cpt.z.sub(z_base).abs().idxmin()        # Index of row with depth closest to pile depth
+    Qsmax = cpt.Qsmax.iloc[near_z_ix]                   # Shaft capacity in kN
+    qsmax = Qsmax/surf_area                             # Shaft capacity in kPa
     
     if result=="stress":
         print(f"The pile shaft capacity is {qsmax:.2f} kPa")
@@ -311,7 +311,7 @@ def unified(cpt, z_top, z_base, closed_ended=True,
     cpt.reset_index(drop=True,inplace=True)
     near_z_ix = cpt.z.sub(z_base).abs().idxmin()        # Index of row with depth closest to pile depth
     Qsmax = cpt.Qsmax.iloc[near_z_ix]                   # Shaft capacity in kN
-    qsmax = (Qsmax/1000)/surf_area                      # Shaft capacity in MPa
+    qsmax = Qsmax/surf_area                             # Shaft capacity in kPa
     
     if result=="stress":
         print(f"The pile shaft capacity is {qsmax:.2f} kPa")
@@ -410,9 +410,9 @@ def afnor_2012(cpt, pile_type, z_top, z_base,
     cpt["Qsmax"] = cpt.Qsmax_contrib.cumsum()
 
     cpt.reset_index(drop=True,inplace=True)
-    near_z_ix = cpt.z.sub(z_base).abs().idxmin()           # Index of row with depth closest to pile depth
-    Qsmax = cpt.Qsmax.iloc[near_z_ix]                  # Shaft capacity in kN
-    qsmax = (Qsmax/1000)/surf_area                       # Shaft capacity in MPa
+    near_z_ix = cpt.z.sub(z_base).abs().idxmin()        # Index of row with depth closest to pile depth
+    Qsmax = cpt.Qsmax.iloc[near_z_ix]                   # Shaft capacity in kN
+    qsmax = Qsmax/surf_area                             # Shaft capacity in kPa
     
     if result=="stress":
         print(f"The pile shaft capacity is {qsmax:.2f} kPa")
@@ -425,14 +425,19 @@ def afnor_2012(cpt, pile_type, z_top, z_base,
     
     
 def nesmith_2002(cpt, z_top, z_base, pile_dia, ws=0,
-                 limit_qc=True,result="force"):
+                 limit_qc=True,limit_qs=True,
+                 result="force"):
     """
-    Method by NeSmith for screw displacement piles in sandy soils.
+    Method by NeSmith for screw displacement piles in SANDY SOILS ONLY.
+    
+    NOTE: Method must be applied layer-by-layer. Otherwise the contribution of 
+    ws will not be accounted for properly.
+    
     
     Note that failure in this method is a settlement based criterion where the
     pile head displacement is equal to 25.4mm (=1 inch)
     
-    :ws: is a constant which depends on soil gradation and angularity
+    :ws: is a constant which depends on soil gradation and angularity [kPa]
     
     For soils containing uniform, rounded particles with up to 40 % fines, 
     ws = 0 and the limiting value of qsi is 0.16 MPa. For soils with well-graded, 
@@ -442,6 +447,8 @@ def nesmith_2002(cpt, z_top, z_base, pile_dia, ws=0,
     Since :ws: is given on a per layer basis, it is recommended to sum up the 
     number of soil layers and input ws manually. So if we have three well-graded
     layers, set :ws: to 3*0.05 MPa.
+    
+    
     
     """  
     print("_________________________________________")
@@ -454,23 +461,30 @@ def nesmith_2002(cpt, z_top, z_base, pile_dia, ws=0,
     d_eq = pile_dia                         # Equivalent pile_diameter = pile_diameter for circular pile
     surf_area = circum*(segment_length)     # Surface area of segment
 
+    cpt = cpt.loc[(cpt.z >= z_base) & (cpt.z <= z_top)]
+
     if limit_qc:
         cpt.qc.loc[cpt.qc > 19] = 19
         print("Limits to qc have been imposed")
 
-    cpt = cpt.loc[(cpt.z >= z_base) & (cpt.z <= z_top)]
-    
     cpt["alpha_s"] = 0.01       # Just one alpha_s is applied to all soil layers
     cpt["qs"]=cpt.alpha_s*cpt.qc*1000  + ws                                # Pile shaft resistance [kPa]
-    
+        
     cpt["depth_diff"] = abs(cpt.z.diff())                     # Depth difference between CPT soundings
     cpt["Qsmax_contrib"] = cpt.depth_diff*circum*cpt.qs     # Contribution of each ~2cm layer to total shear resistance
     cpt["Qsmax"] = cpt.Qsmax_contrib.cumsum()
 
     cpt.reset_index(drop=True,inplace=True)
     near_z_ix = cpt.z.sub(z_base).abs().idxmin()           # Index of row with depth closest to pile depth
-    Qsmax = cpt.Qsmax.iloc[near_z_ix]                  # Shaft capacity in kN
-    qsmax = (Qsmax/1000)/surf_area                       # Shaft capacity in MPa
+    Qsmax = cpt.Qsmax.iloc[near_z_ix]             # Shaft capacity in kN
+    qsmax = Qsmax/surf_area                       # Shaft capacity in kPa
+    
+    if limit_qs == True:
+        # qb_lim needs to be interpolated between 160 and 210 kPa
+        ws_perc = ws/50
+        qslim = 160 + ws_perc*(210 - 160) 
+        qsmax = min(qslim,qsmax)
+        Qsmax = qsmax * surf_area  
     
     
     if result=="stress":
