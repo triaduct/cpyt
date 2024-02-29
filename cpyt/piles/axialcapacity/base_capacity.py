@@ -256,7 +256,6 @@ def nesmith_2002(cpt, z_base, pile_dia, wb=0, limit_qc_avg=True,
         print("_________________________________________")
         return Qbmax
 
-
 def unified(cpt,z_top, z_base, closed_ended=True, 
             alpha_p = None, avg_method = "lcpc",
             h=None, b=None, d_cpt=35.7E-3,
@@ -268,7 +267,7 @@ def unified(cpt,z_top, z_base, closed_ended=True,
     Generic method
     """
     print("_________________________________________")
-    print("Calculating base capacity using a custom method ...\n")
+    print("Calculating base capacity using the Unified method for sand...\n")
     
     ## Pile Geometry
     if (h==None) & (b==None):       # i.e. if the pile is circular
@@ -300,6 +299,7 @@ def unified(cpt,z_top, z_base, closed_ended=True,
 
     qb01 = (0.12 + 0.38*A_re)*qp    # Base stress [kPa]
     Qbase = (qb01*1000*area)       # Max pile tip capacity [kN]
+    # TODO: Should Qbase be over the entirety of the pile tip?
 
     if result=="stress":
         print(f"The pile base capacity at {z_base:.2f} m is {qb01:.2f} MPa")

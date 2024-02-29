@@ -1,4 +1,4 @@
-5# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Created on Mon Oct 14 13:32:51 2019
 
@@ -177,7 +177,7 @@ def doan_lehane_2021(cpt, z_top, z_base,pile_dia,
         return Qsmax
 
 
-def uwa05(cpt, pile_type, z_top, z_base,
+def uwa05(cpt, pile_type, z_top_inc, z_base_inc, z_base,
             h=np.nan, b=np.nan, pile_dia=np.nan, 
             alpha_s="default", result="force"):
     """
@@ -192,7 +192,7 @@ def uwa05(cpt, pile_type, z_top, z_base,
     print("_________________________________________")
     print("Calculating shaft capacity using the UWA design method ...\n")
     
-    segment_length = z_top-z_base
+    segment_length = z_top_inc-z_base_inc
     
     ## Pile Geom
     if (np.isnan(h) == True) & (np.isnan(b) == True):       # i.e. if the pile is circular
@@ -213,7 +213,7 @@ def uwa05(cpt, pile_type, z_top, z_base,
     if "sig_eff" not in cpt.columns:
         raise ValueError("The UWA design method needs sig_eff as an input.\nSee cpyt.correlations")
 
-    cpt = cpt.loc[(cpt.z >= z_base) & (cpt.z <= z_top)]
+    cpt = cpt.loc[(cpt.z >= z_base_inc) & (cpt.z <= z_top_inc)]
     
     IFR = 0
     A_rs = 1-IFR*(1)
@@ -250,7 +250,69 @@ def uwa05(cpt, pile_type, z_top, z_base,
         return Qsmax
     
 #%%
-def unified(cpt, z_top, z_base, closed_ended=True, 
+def unified_clay(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True, 
+            Fst = 1,
+            D_inner = None, D_outer=None, 
+            tension_load = False,
+            result="force"):
+    """
+    (Lehane et al., 2022)
+    :z_base:            Needed to calculate h/D
+    :param Fst:             Describes the sensitivity of the soil. Fst =1 for Zone 2,3,4
+                            clays and Fst = 0.5+-0.2 for Zone 1 Clays
+                            TODO: Implement automatic check for Zone 1 clay
+    :param tension_load:    Unified method for clay does not differentiate between tension
+                            load and comparession (ft/fc =1). Parameter included for clarity
+    
+    Function which calculates the pile base capacity based on:
+        :cpt:           Input dataframe of CPT data
+        :z_top:         Elevation of pile head relative to CPT
+        :z_base:        Elevation of pile base relative to CPT
+        :d_cpt:         Diameter of the CPT cone [m]
+    """    
+    print("_________________________________________")
+    print("Calculating shaft capacity using the Unified design method for sand...\n")
+    
+    if "qt" not in cpt.columns:
+        raise ValueError("The Unified design method needs qt as an input.\nSee cpyt.correlations")
+
+    segment_length = z_top_inc - z_base_inc
+    cpt = cpt.loc[(cpt.z <= z_top_inc) & (cpt.z >= z_base)]
+    
+    circum = np.pi*D_outer
+    surf_area = circum*segment_length
+    
+    if closed_ended:
+        Dstar = D_outer
+    else:
+        Dstar = (D_outer**2 - D_inner**2)**0.5  
+        
+    cpt["h_D"] = (cpt.z - z_base)/Dstar
+    cpt.h_D.loc[cpt.h_D < 1] = 1    # i.e. max(1, h/D)
+    
+    cpt["qs"] = 0.07 * Fst * (cpt.qt*1000) * cpt.h_D **-0.25    # kPa
+    
+    # Return result
+    cpt["depth_diff"] = abs(cpt.z.diff())                   # Depth difference between CPT soundings
+    cpt["Qsmax_contrib"] = cpt.depth_diff*circum*cpt.qs     # Contribution of each ~2cm layer to total shear resistance
+    cpt["Qsmax"] = cpt.Qsmax_contrib.cumsum()
+
+    cpt.reset_index(drop=True,inplace=True)
+    near_z_ix = cpt.z.sub(z_base).abs().idxmin()        # Index of row with depth closest to pile depth
+    Qsmax = cpt.Qsmax.iloc[near_z_ix]                   # Shaft capacity in kN
+    qsmax = Qsmax/surf_area                             # Shaft capacity in kPa
+    
+    if result=="stress":
+        print(f"The pile shaft capacity is {qsmax:.2f} kPa")
+        print("_________________________________________")
+        return qsmax
+    elif result=="force":
+        print(f"The pile shaft capacity is {Qsmax:.2f} kN")
+        print("_________________________________________")
+        return Qsmax
+
+
+def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True, 
             material="concrete",
             h=None, b=None, d_cpt=35.7E-3,
             D_inner = None, D_outer=None, 
@@ -261,14 +323,16 @@ def unified(cpt, z_top, z_base, closed_ended=True,
         :cpt:           Input dataframe of CPT data
         :z_top:         Elevation of pile head relative to CPT
         :z_base:        Elevation of pile base relative to CPT
+        :d_cpt:         Diameter of the CPT cone [m]
     """    
     print("_________________________________________")
-    print("Calculating shaft capacity using the Unified design method ...\n")
+    print("Calculating shaft capacity using the Unified design method for clay ...\n")
     
     if "sig_eff" not in cpt.columns:
         raise ValueError("The Unified design method needs sig_eff as an input.\nSee cpyt.correlations")
 
-    segment_length = z_top-z_base
+    segment_length = z_top_inc - z_base_inc
+    cpt = cpt.loc[(cpt.z <= z_top_inc) & (cpt.z >= z_base_inc)]
     
     ## Pile Geometry
     if (h==None) & (b==None):       # i.e. if the pile is circular
@@ -321,8 +385,8 @@ def unified(cpt, z_top, z_base, closed_ended=True,
         print(f"The pile shaft capacity is {Qsmax:.2f} kN")
         print("_________________________________________")
         return Qsmax
-
-
+    
+#%%
 def afnor_2012(cpt, pile_type, z_top, z_base,
                 h=np.nan, b=np.nan, pile_dia=np.nan, limit_qs=False,
                 result="force"):
@@ -335,7 +399,7 @@ def afnor_2012(cpt, pile_type, z_top, z_base,
     segment_length = z_top-z_base
     
     if "soil_type" not in cpt.columns:
-        cpt = classify_cpt.best_possible_method(cpt)
+        cpt = classify.best_possible_method(cpt)
     
     ## Pile Geom
     if (np.isnan(h) == True) & (np.isnan(b) == True):   # i.e. if the pile is circular
@@ -372,18 +436,16 @@ def afnor_2012(cpt, pile_type, z_top, z_base,
     cpt.alpha.loc[cpt.soil_type == "clay"] = alpha_dict_clay[pile_type]
     
     qc = cpt.qc     # For ease of reading
+    qc[qc > 20] = 20    # f_sol function only applicable at qc<20 MPa
     
-    # A quick fit polynomial was used to get these functions. Better hyperbolic functions could be used
-    cpt.loc[cpt.soil_type == "sand","f_sol"] = 0.0132*qc**3 - 0.6771*qc**2 + 14.16*qc
-    cpt.loc[cpt.soil_type == "silt","f_sol"] = -0.0017*qc**4 + 0.0954*qc**3 - 2.0864*qc**2 + 23.618*qc
-    cpt.loc[cpt.soil_type == "clay","f_sol"] = -0.0049*qc**4 + 0.2389*qc**3 - 4.2588*qc**2 + 35.049*qc
+    a = 0.0012; b = 0.1; c = 0.15
+    cpt.loc[cpt.soil_type == "sand","f_sol"] = (0.0012*qc + b)*(1-np.exp(-c*qc))
+    a = 0.0018; b = 0.1; c = 0.4
+    cpt.loc[cpt.soil_type == "clay","f_sol"] = (0.0012*qc + b)*(1-np.exp(-c*qc))
+    a = 0.0015; b = 0.1; c = 0.25
+    cpt.loc[cpt.soil_type == "intermediate","f_sol"] = (0.0012*qc + b)*(1-np.exp(-c*qc))        # For intermediate soils, chalk, weather rock, marl
     
-    # Functions for f_sol only apply for qc<20 MPa so limit at values beyond this
-    cpt.loc[(cpt.soil_type == "sand") & (cpt.qc > 20),"f_sol"] = 118
-    cpt.loc[(cpt.soil_type == "silt") & (cpt.qc > 20),"f_sol"] = 129
-    cpt.loc[(cpt.soil_type == "clay") & (cpt.qc > 20),"f_sol"] = 125
-    
-    cpt["qs"]=cpt.alpha*cpt.f_sol    # Pile shaft resistance [kPa]
+    cpt["qs"] = cpt.alpha * (cpt.f_sol*1000)    # Pile shaft resistance [kPa]
     
     # Limit
     if limit_qs:

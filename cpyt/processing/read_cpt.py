@@ -43,6 +43,7 @@ class CPT:
         self.incl = []              # Absolute inclination of cone [degrees]
         self.incl_x = []            # Inclination of cone in x direction [degrees]
         self.incl_y = []            # Inclination of cone in y direction [degrees]
+        self.temperature = []       # Temperature in the ocne
 
         # Derived variables
         self.rate = []              # Rate of penetration [cm/s]
@@ -58,7 +59,7 @@ class CPT:
         
         GEF_COL_DTYPE = {1: "pen", 2: "qc", 3: "fs", 4: "Rf", 5: "u1", 6: "u2",
                          7: "u3", 8: "incl", 9: "incl_x", 10: "incl_y", 11: "corr_z",
-                         12: "time"}        # See deltares_gef explanation.pdf for dtypes
+                         12: "time", 21: "incl_x", 22: "incl_y", 129: "temperature"}        # See deltares_gef explanation.pdf for dtypes
         
         col_sep = ";"          # Column separator/delimiter
         rec_sep = "\n"         # Record separator. Separates each line from one another
@@ -141,8 +142,13 @@ class CPT:
                     args = line.split(" ") 
             
                 args = list(filter(None, args))
-                args = [np.nan if float(value) == col_void[i] else float(value) for i,value in enumerate(args)]    # replace zero values
-                
+                for i,value in enumerate(args):
+                    value = float(value)
+                    if len(col_void) > 0:       # if #COLUMNVOID is specified in GEF file
+                        if float(value) == col_void[i]:
+                            value = np.nan
+                    args[i] = value
+                        
                 for dtype, col_id in _columns.items():
                     self.__dict__[GEF_COL_DTYPE[dtype]].append(float(args[col_id]))     # Appends to class attribute based on dtype
  
@@ -303,7 +309,7 @@ class CPT:
 #%%
 if __name__ == "__main__":
     import os
-    dataFolder = "C:\\Users\\kduffy\\Downloads\\Newer folder\\"
+    dataFolder = "C:\\Users\\kduffy\\Downloads\\folder\\"
     gef_file = "sample-cpt.gef"
     
     for cpt in os.listdir(dataFolder):
