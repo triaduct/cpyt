@@ -388,7 +388,7 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     
 #%%
 def afnor_2012(cpt, pile_type, z_top, z_base,
-                h=np.nan, b=np.nan, pile_dia=np.nan, limit_qs=False,
+                h=np.nan, b=np.nan, pile_dia=np.nan, limit_qs=True,
                 result="force"):
     """
     French method. See Frank, 2017
@@ -484,8 +484,212 @@ def afnor_2012(cpt, pile_type, z_top, z_base,
         print(f"The pile shaft capacity is {Qsmax:.2f} kN")
         print("_________________________________________")
         return Qsmax
+
+    #%%
+def bustamente_gianeselli_1998(cpt, pile_type, z_top, z_base,soil_type,
+                               pile_dia,result="force"):
+    """
+    Bustamente & Gianeselli (1998) method developed primarily for screw displacement
+    piles. Formed the basis for the current AFNOR method
     
+    Need to specify soil_type and pile_type
+    """    
+    print("_________________________________________")
+    print("Calculating shaft capacity using the Bustamente & Gianeselli (1998) design method...\n")
+    segment_length = z_top-z_base
     
+
+    circum = 2*np.pi*(pile_dia/2)
+    d_eq = pile_dia                                 # Equivalent pile_diameter = pile_diameter for circular pile
+    surf_area = circum*(segment_length)             # Surface area of segment
+
+      
+    cpt = cpt.loc[(cpt.z >= z_base) & (cpt.z <= z_top)]
+    qc = cpt.qc.mean()
+    
+    # Curves are given as points and are dependent on pile and soil type
+    curves = {"Q1": np.array([[0,0.4,0.7,1.2],[0,0.02,0.03,0.04]]),
+              "Q2": np.array([[0.4,1,1.8,3],[0.03,0.06,0.08,0.09]]),
+              "Q3": np.array([[0.2,1,2,3],[0.03,0.08,0.115,0.125]]),
+              "Q4": np.array([[0.5,1,2,3],[0.07,0.1,0.14,0.16]]),
+              "Q5": np.array([[1,1.5,3],[0.12,0.15,0.2]])}
+
+    if ("clay" in soil_type) | ("silt" in soil_type):    # No prescriptions for silt in original document, but stateed in Bu&Gi, 1997
+        if qc < 1.5:        # Was originally 1 but doesn't describe anything between 1.0 and 1.5
+            Q = "Q1"
+        elif (qc > 1.5) & (qc < 3):
+            if pile_type == "screw_cast_in_place":
+                Q = "Q3"
+            if pile_type == "screw_pile_with_casing":
+                Q = "Q2"
+        elif (qc > 3):
+            if pile_type == "screw_cast_in_place":
+                Q = "Q4"
+            if pile_type == "screw_pile_with_casing":
+                Q = "Q2"
+    elif "sand" in soil_type:
+        if qc < 3.5:
+            Q = "Q1"
+        elif (qc > 3.5) & (qc < 8):
+            if pile_type == "screw_cast_in_place":
+                Q = "Q4"
+            if pile_type == "screw_pile_with_casing":
+                Q = "Q2"
+        elif (qc > 8):
+            if pile_type == "screw_cast_in_place":
+                Q = "Q5"
+            if pile_type == "screw_pile_with_casing":
+                Q = "Q2"
+    
+    print(soil_type)
+    print(Q)
+    Q = curves[Q]
+    
+    # Curves originally given according to the pressuremeter. Scale the curves up 
+    # to get CPT values and adjust per soil type.
+    soil_factor_dict = {"clay": 3, "clayey-silt": 3, "sandy-clay": 3, 
+                        "silt": 3,      # No guidance for pure silt soils
+                        "sand": 8, "gravel": 8, "marl": 3.5}               
+    soil_factor = soil_factor_dict[soil_type]
+    Q[0] = soil_factor*Q[0]        # Multiply the x-axis values by this amount
+    
+    n_points = Q.shape[1]
+    for i in range(n_points):           # For each point on the curve
+        if i == n_points- 1:            # If last point, limiting value reached
+            qsmax = Q[1][i]*1000        # Shaft resistance in [kPa]
+            break
+        
+        if (qc > Q[0][i]) & (qc < Q[0][i+1]):
+            x1, x2, y1, y2 = Q[0][i], Q[0][i+1], Q[1][i], Q[1][i+1],
+            qsmax = np.interp(qc, [x1,x2], [y1,y2])*1000     # Shaft resistance in [kPa]
+            break
+        # else:
+            # raise ValueError(f"A qc value of {qc:.1f} is not available on the curve")
+    
+    Qsmax = qsmax*surf_area                             # Shaft capacity in kN
+    
+    # Plot results to double-check
+    # fig = plt.figure()
+    # ax = fig.gca()
+    # for curve in ["Q1", "Q2", "Q3", "Q4", "Q5"]:
+    #     ax.plot(curves[curve][0],curves[curve][1],alpha=0.5,c="black")
+    # ax.plot(Q[0]/soil_factor,Q[1],c="k")
+    # ax.scatter(qc/soil_factor,qsmax/1000)
+    # ax.set_xlim(0,3)
+    # plt.show()
+    
+    if result=="stress":
+        print(f"The pile shaft capacity is {qsmax:.2f} kPa")
+        print("_________________________________________")
+        return qsmax
+    elif result=="force":
+        print(f"The pile shaft capacity is {Qsmax:.2f} kN")
+        print("_________________________________________")
+        return Qsmax
+
+#%%
+def nbn_2022(cpt, pile_type, z_top, z_base,soil_type,
+                h=np.nan, b=np.nan, pile_dia=np.nan,limit_qs = True,
+                result="force"):
+    """
+    Belgian method. See Huybrechts et al. 2016. alpha factors have since been updated
+
+    Performed layer by layer
+    """    
+    print("_________________________________________")
+    print("Calculating shaft capacity using the Belgian NBN design method ...\n")
+    segment_length = z_top-z_base
+    
+    if "soil_type" not in cpt.columns:
+        cpt = classify.best_possible_method(cpt)
+    
+    ## Pile Geom
+    if (np.isnan(h) == True) & (np.isnan(b) == True):   # i.e. if the pile is circular
+        circum = 2*np.pi*(pile_dia/2)
+        d_eq = pile_dia                                 # Equivalent pile_diameter = pile_diameter for circular pile
+        surf_area = circum*(segment_length)             # Surface area of segment
+    if np.isnan(pile_dia) == True:                      # i.e. if the pile is rectangular
+        circum = 2*h + 2*b
+        area = h*b
+        d_eq = ((area/np.pi)**0.5)*2
+        surf_area = 2*h*segment_length + 2*b*segment_length
+      
+    cpt = cpt.loc[(cpt.z >= z_base) & (cpt.z <= z_top)]
+    qc = cpt.qc.mean()
+    
+    # Apply alpha factors (relates to installation method)
+    alpha_dict_other = {"driven_closed_ended": 1.0,             # "other" means soil types other than tclay
+                       "screw_with_temporary_tube": 0.6,         # With temporary tube and shaft in plastic concrete
+                       "screw_with_lost_tube": 0.6,
+                       "screw_injection": 0.6
+                       }
+    alpha_dict_clay = {"driven_closed_ended": 0.9,             # 
+                           "screw_with_temporary_tube": 0.6,         # With temporary tube and shaft in plastic concrete
+                           "screw_with_lost_tube": 0.6,
+                           "screw_injection": 0.6
+                           }
+    
+    if soil_type in ["sand","silt"]:
+        alpha_s = alpha_dict_other[pile_type]
+    elif soil_type == "clay":
+        alpha_s = alpha_dict_clay[pile_type]      # Have stated that tertiary clay == clay
+
+    # Apply eta factors    
+    if soil_type == "clay":
+        if qc < 1: 
+            eta_p = 1/30            # NOTE: no value specified in Huybrechts et al. 2016. Just set as 1/30
+        elif (qc >= 1) & (qc < 4.5):
+            eta_p = 1/30
+        elif (qc > 4.5):            # NOTE: no value specified in Huybrechts et al. 2016. Just set as 1/30      # 11/03: work around for calcs.py
+            eta_p = 1/30
+    elif soil_type == "silt":
+        if qc < 1: 
+            eta_p = 1/60            # NOTE: no value specified in Huybrechts et al. 2016. Just set as 1/30
+        if (qc >= 1) & (qc < 6):
+            eta_p = 1/60      
+    elif soil_type == "sandy_clay":
+        if qc < 1: 
+            eta_p = 1/80            # NOTE: no value specified in Huybrechts et al. 2016. Just set as 1/30
+        if (qc >= 1) & (qc < 10):
+            eta_p = 1/80      
+    elif soil_type == "sand":
+        if (qc <= 1):
+            eta_p = 1/90         # NOTE: no value specified in Huybrechts et al. 2016. Just set as 1/90
+        if (qc >= 1) & (qc < 10):
+            eta_p = 1/90  
+    else:
+        eta_p = 1/100
+        print("NO ETA_P HAS BEEN PRESCRIBED")
+    
+    # Calculate unit shaft friction
+    if (soil_type == "clay") & (qc > 4.5):
+        qs = 150
+    elif (soil_type == "silt") & (qc > 6.0):
+        qs = 100
+    elif (soil_type == "clayey_sand") & (qc > 10):
+        qs = 125
+    elif (soil_type == "sand") & (qc >= 10.0) & (qc < 20.0):
+        qs = 110 + 4*(qc - 10)      # NB: qc here is in MPa -- empirical correlation
+    elif (soil_type == "sand") & (qc > 20):
+        qs = 150
+    else: 
+        qs = 1000*eta_p*qc
+    
+    qsmax = qs*alpha_s # [kPa]
+    Qsmax = segment_length*circum*qs # [kN]
+
+    
+    if result=="stress":
+        print(f"The pile shaft capacity is {qsmax:.2f} kPa")
+        print("_________________________________________")
+        return qsmax
+    elif result=="force":
+        print(f"The pile shaft capacity is {Qsmax:.2f} kN")
+        print("_________________________________________")
+        return Qsmax    
+   
+
+#%%
 def nesmith_2002(cpt, z_top, z_base, pile_dia, ws=0,
                  limit_qc=True,limit_qs=True,
                  result="force"):

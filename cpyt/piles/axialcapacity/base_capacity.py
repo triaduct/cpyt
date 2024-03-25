@@ -129,6 +129,79 @@ def nen9997_2017(cpt,z_base,pile_type,pile_h=np.nan, pile_b=np.nan, pile_dia=np.
         print("_________________________________________")
         return Qbmax
 
+
+def nbn_2022(cpt,z_base,pile_type,pile_h=np.nan, pile_b=np.nan, pile_dia=np.nan,
+             alpha_b=None, beta=None,lmbda=1,result="stress"):
+    """
+    Specify equivalent diameter area if square pile
+    
+    FOR SAND ONLY
+     
+    NOTE: Not include in this is :lmbda: which is a reduction factor that accounts
+    for an enlarged pile base which may generate soil relaxation during installation.
+    It is determined as follows:
+        - for piles with an enlarged base that has been formed at depth, not causing soil relaxation
+        around the pile shaft during installation: λ = 1.00
+        - for piles with a prefabricated enlarged base, with Db,eq < Ds + 0.05 m: λ = 1.00
+        - for all other piles with a prefabricated base:
+            - Calculate:    x = Db**2/Ds**2
+            - Screw pile:
+                if x < 1.5: lmbda = 1
+                if x > 1.7: lmbda = 0.7
+            - Driven pile
+                if x < 1.25: lmbda = 1
+                if x > 1.7: lmbda = 0.7
+    """
+    
+    print("_________________________________________")
+    print("Calculating base capacity using the Belgian NBN 2014 design method ...\n")
+    if (np.isnan(pile_h) == True) & (np.isnan(pile_b) == True):               # i.e. if the pile is circular
+        area = np.pi*(pile_dia/2)**2
+        pile_dia = pile_dia        
+        pile_shape = "circle"
+        
+    if np.isnan(pile_dia) == True:                                       # i.e. if the pile is rectangular
+        area = pile_h*pile_b
+        pile_dia = ((area/np.pi)**0.5)*2        # Equivalent diameter
+        if pile_h == pile_b:
+            pile_shape = "square"
+        else:
+            pile_shape = "rectangle"
+    
+    # alpha_factor (sand only)
+    if alpha_b == None:
+        alpha_b_dict = {"driven_closed_ended": 1.0,             # "other" means soil types other than tertiary clay"
+                        "screw_with_temporary_tube": 0.5,         # With temporary tube and shaft in plastic concrete
+                        "screw_with_lost_tube": 0.5,
+                        "screw_injection": 0.5
+                        }
+        
+        alpha_b = alpha_b_dict[pile_type]
+        
+    # beta factor (shape factor)
+    if beta == None:
+        if pile_shape == "circle":
+            beta = 1
+        elif pile_shape == "square":
+            beta = 1
+        elif pile_shape == "rectangle":
+            beta = (1 + 0.3*(pile_h/pile_b))/1.3
+        
+    qc_avg = averaging_methods.de_beer(cpt, pile_dia, target_depth = z_base)
+    qbmax = qc_avg*alpha_b*beta*lmbda    # Maximum pile tip resistance [MPa]
+    Qbmax = qbmax*1000*area   # Max pile tip capacity [kN]
+
+
+    if result=="stress":
+        print(f"The pile base capacity at {z_base:.2f} m is {qbmax:.2f} MPa")
+        print("_________________________________________")
+        return qbmax
+    elif result=="force":
+        print(f"The pile base capacity at {z_base:.2f} m is {Qbmax:.2f} kN")
+        print("_________________________________________")
+        return Qbmax
+    
+    
 def afnor_2012(cpt,z_base,pile_type,soil_type,top_bearing_layer,
                pile_h=np.nan, pile_b=np.nan, pile_dia=np.nan, 
                bearing_factor=True,
@@ -210,8 +283,7 @@ def afnor_2012(cpt,z_base,pile_type,soil_type,top_bearing_layer,
     
     
 def nesmith_2002(cpt, z_base, pile_dia, wb=0, limit_qc_avg=True,
-                 limit_qb = True,
-                 result="stress"):
+                 limit_qb = True, result="stress"):
     """
     Method be NeSmith for screw displacement piles in sandy soils.
     
@@ -242,7 +314,6 @@ def nesmith_2002(cpt, z_base, pile_dia, wb=0, limit_qc_avg=True,
         # qb_lim needs to be interpolated between 7.2 and 8.62
         wb_perc = wb/1.34
         qblim = 7.2 + wb_perc*(8.62 - 7.2) 
-        print("QB LIM " + str(qblim))
         qbmax = min(qblim,qbmax)
 
     Qbmax = (qbmax*1000*area)   # Max pile tip capacity [kN]

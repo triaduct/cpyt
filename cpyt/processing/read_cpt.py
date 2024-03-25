@@ -43,6 +43,8 @@ class CPT:
         self.incl = []              # Absolute inclination of cone [degrees]
         self.incl_x = []            # Inclination of cone in x direction [degrees]
         self.incl_y = []            # Inclination of cone in y direction [degrees]
+        self.incl_NS = []            # Inclination of cone in the North-South direction [degrees]
+        self.incl_EW = []            # Inclination of cone in the East-West direction [degrees]
         self.temperature = []       # Temperature in the ocne
 
         # Derived variables
@@ -58,7 +60,7 @@ class CPT:
         print("==  " + filename.split("\\")[-1] + "  =============\n")
         
         GEF_COL_DTYPE = {1: "pen", 2: "qc", 3: "fs", 4: "Rf", 5: "u1", 6: "u2",
-                         7: "u3", 8: "incl", 9: "incl_x", 10: "incl_y", 11: "corr_z",
+                         7: "u3", 8: "incl", 9: "incl_NS", 10: "incl_EW", 11: "corr_z",
                          12: "time", 21: "incl_x", 22: "incl_y", 129: "temperature"}        # See deltares_gef explanation.pdf for dtypes
         
         col_sep = ";"          # Column separator/delimiter
@@ -131,7 +133,10 @@ class CPT:
                 elif keyword == "#MEASUREMENTTEXT":
                     mtext[int(args[0])] = str(args[1])
                 elif keyword == "#STARTDATE":
-                    self.date = datetime(int(args[0]),int(args[1]),int(args[2]))
+                    try:
+                        self.date = datetime(int(args[0]),int(args[1]),int(args[2]))
+                    except:
+                        self.date = "-".join([args[0],args[1],args[2]])     # Just leave as a string if non-int digits included in #STARTDATE
             
             else:
                 # Parse a data line
@@ -145,12 +150,15 @@ class CPT:
                 for i,value in enumerate(args):
                     value = float(value)
                     if len(col_void) > 0:       # if #COLUMNVOID is specified in GEF file
+                        if i not in col_void:
+                            continue
                         if float(value) == col_void[i]:
                             value = np.nan
                     args[i] = value
                         
                 for dtype, col_id in _columns.items():
-                    self.__dict__[GEF_COL_DTYPE[dtype]].append(float(args[col_id]))     # Appends to class attribute based on dtype
+                    if dtype in GEF_COL_DTYPE:
+                        self.__dict__[GEF_COL_DTYPE[dtype]].append(float(args[col_id]))     # Appends to class attribute based on dtype
  
 
             if line.find('#EOH') > -1:
@@ -309,15 +317,11 @@ class CPT:
 #%%
 if __name__ == "__main__":
     import os
-    dataFolder = "C:\\Users\\kduffy\\Downloads\\folder\\"
-    gef_file = "sample-cpt.gef"
-    
-    for cpt in os.listdir(dataFolder):
-        if cpt.split(".")[-1] == "GEF":
-            g = CPT()
-            g.readGEF(dataFolder + cpt)
-            df = g.asDataFrame()
-            df.to_csv(dataFolder + cpt.strip(".GEF") + ".csv")
-            g.plot("delete")
+    gef_file = "CPT000000062229_IMBRO_A.gef"
+
+    g = CPT()
+    g.readGEF(gef_file)
+    df = g.asDataFrame()
+
 
 

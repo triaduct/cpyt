@@ -10,7 +10,7 @@ from scipy.interpolate import interp1d
 from scipy.optimize import brentq
 from copy import deepcopy
 
-import cpyt.interpretation.correlations
+import cpyt.interpretation.correlations as correlations
 
 
 """
@@ -163,55 +163,42 @@ def de_boorder(cpt, pile_dia, target_depth):
     return qc_avg
 
 
-def boulanger(cpt,pile_dia, target_depth):
-    """ 
-    21/10/22: Not implemented yet: was working off DDL's matlab code.
+def boulanger_dejong(cpt, dia, target_depth):
     """
-    # input: (cpt, avg_method, target_depth, pile_dia, plot_min_path = True)
+    Method prescribed in Boulanger & DeJong (2018). Recommend averaging method
+    in the Unified pile design method (Lehane et al., 2022)
     
+    :dia:           Diameter of penetrometer.
+                    NOTE: The Boulanger & DeJong method was not explicitly formulated for 
+                    piles (namely scale effects). This was the further research of de 
+                    Lange (2017), de Boorder (2021) and so on.
+    :target_depth:  depth for calcualtion, with respect to cpt.z (-ve => downwards)       
+
+    """
     z50_ref=4.0
     mz=3.0
     m50=0.5
     mq=2
             
-    
-    qt_tip = cpt.qc.iloc[(cpt.z-target_depth).abs().argsort()[:2]]
-    cpt["z_norm"] = (cpt.z-target_depth)/pile_dia 
+    qt_tip = cpt.qc.iloc[(cpt.z-target_depth).abs().argsort()[:2]]      # Cone resistance at :target_depth:
     cpt[["C1","C2","z50","w1","w2","w1w2","wc"]] = np.nan
+    cpt["z_norm"] = -1*(cpt.z-target_depth)/dia    # Normalised depth. -ve values are above the pile tip, +ve are below
     
+    # Equation 6
     cpt.C1.loc[cpt.z_norm >= 0] = 1
-    cpt.C2.loc[cpt.z_norm >= 0] = 1
     cpt.C1.loc[(cpt.z_norm >= -4) & (cpt.z_norm < 0)] = 1 + cpt.z_norm/8
-    cpt.C1.loc[(cpt.z_norm >= -4) & (cpt.z_norm < 0)] = 0.8
     cpt.C1.loc[cpt.z_norm < -4] = 0.5
-    cpt.C1.loc[cpt.z_norm < -4] = 0.8
+    
+    cpt.C2.loc[cpt.z_norm >= 0] = 1         # Equal to unity below the pile tip (+ve numbers imply downwards)
+    cpt.C2.loc[cpt.z_norm <= 0] = 0.8       # Equal to 0.8 above the pile tip
 
-    cpt.z50 = 1+2*(cpt.C2*z50_ref - 1)*(1-(1/(1+(qt_tip/cpt.qc)**m50)))
-    cpt.w1 = cpt.C1/(1+(cpt.z_norm/z50_ref)**mz)
-    cpt.w2 = np.sqrt(2/(1+(cpt.qc/qt_tip)**mq))
-    cpt.w1w2 = cpt.w1 * cpt.w2
-    cpt.wc = (cpt.w1*cpt.w2)/cpt.w1w2.sum()
+    cpt.z50 = 1+2*(cpt.C2*z50_ref - 1)*(1-(1/(1+(qt_tip/cpt.qc)**m50)))     # Equation 7
+    
+    cpt.w1 = cpt.C1/(1+(cpt.z_norm/z50_ref)**mz)        # Equation 5
+    cpt.w2 = np.sqrt(2/(1+(cpt.qc/qt_tip)**mq))         # Equation 8
+    cpt.w1w2 = cpt.w1 * cpt.w2                          
+    cpt.wc = (cpt.w1*cpt.w2)/cpt.w1w2.sum()             # Equation 3
     qc_w = (cpt.qc*cpt.wc)/(cpt.wc.sum()) 
-    qc_avg = qc_w.sum()
-    
-    ####
-    HD_a = 8.3              # Distance over which the cosine function is applied above the pile
-    HD_b = 15.5             # "..." below the pile
-    f = 13.5                # Damping factor
-    s = 0.9                 # Reshapes the weight related to the stiffness ratio
-    
-    cpt = cpt.loc[(cpt.z <= target_depth + HD_a*pile_dia) & (cpt.z >= target_depth - HD_b*pile_dia)]
-    cpt["HD"] = np.nan
-    cpt.loc[cpt.z >= target_depth,"HD"] = HD_a
-    cpt.loc[cpt.z <= target_depth, "HD"] = HD_b
-    cpt["x"] = abs((target_depth-cpt.z)/(pile_dia*cpt.HD))
-    cpt["w1"] = np.exp(-f*cpt.x)*np.cos(0.5*np.pi*cpt.x)   # First weight relating to the cosine dampening function and distance to pile tip
-    near_z_ix = cpt.z.sub(target_depth).abs().idxmin()       # Index of row with depth closest to pile depth
-    qc_tip = cpt.loc[near_z_ix, "qc"]
-    cpt["w2"] = (qc_tip/cpt.qc)**s                        # Wegiht of one point related to stiffness ratio
-    cpt["w3"] = cpt.w1*cpt.w2                              # Total weight of qc at one point
-    
-    qc_w = cpt.qc*cpt.w3/(cpt.w3.sum())
     qc_avg = qc_w.sum()
     
     print(f"Using the Boulanger method, qc_avg at {target_depth:.2f}m is {qc_avg:.2f} MPa") 
@@ -252,7 +239,7 @@ def de_beer(cpt, pile_dia, target_depth):
         # https://github.com/snakesonabrain/methodedebeer/blob/master/debeer/calculation.py
         """
         Requies input of
-        :uw:    Only really makes a big difference in the upper layers
+        :gammaSat:    Only really makes a big difference in the upper layers
         :pen:   Penetration w.r.t to surface. Positive indicates deeper
         """
         # cpt["pen"] = cpt.pen*-1     # Penetration is negative in this code
@@ -265,9 +252,9 @@ def de_beer(cpt, pile_dia, target_depth):
             z_new = np.interp(pen_new,cpt.pen.values,cpt.z.values)
             qc_new = np.interp(pen_new,cpt.pen.values,cpt.qc.values)
             qt_new = np.interp(pen_new,cpt.pen.values,cpt.qt.values)
-            uw_new = np.interp(pen_new,cpt.pen.values,cpt.uw.values)
+            gammaSat_new = np.interp(pen_new,cpt.pen.values,cpt.gammaSat.values)
             sig_eff_new = np.interp(pen_new,cpt.pen.values,cpt.sig_eff.values)
-            cpt_new = pd.DataFrame({"z":z_new,"pen":pen_new,"qc":qc_new,"qt":qt_new,"uw":uw_new,"sig_eff":sig_eff_new})
+            cpt_new = pd.DataFrame({"z":z_new,"pen":pen_new,"qc":qc_new,"qt":qt_new,"gammaSat":gammaSat_new,"sig_eff":sig_eff_new})
             return cpt_new
         
         def optimisation_func(beta, hd, frictionangle):             # Eq 60
@@ -354,7 +341,7 @@ def de_beer(cpt, pile_dia, target_depth):
         
             calc['A qp [MPa]'] = list(map(lambda _qp, _po, _gamma, _qc: min(_qc, stress_correction(
                 qc=_qp, po=_po, diameter_pile=pile_dia, diameter_cone=dia_cone, gamma=_gamma, hcrit=hcrit)),
-                               calc['qp [MPa]'], calc.sig_eff, calc.uw, calc.qc))
+                               calc['qp [MPa]'], calc.sig_eff, calc.gammaSat, calc.qc))
         
             # --------------------------------------------------------------------
             # Step 3: Corrections for transition from weaker to stronger layers
@@ -409,13 +396,13 @@ def de_beer(cpt, pile_dia, target_depth):
         if cpt.pen.min() < 0:
             raise ValueError("cpt.pen must be positive numbers")
             
-        if "uw" not in cpt.columns:
-            print("Recommend calculating UW and sig_eff for the De Beer method")
+        if "gammaSat" not in cpt.columns:
+            print("Recommend calculating gammaSat and sig_eff for the De Beer method")
             print("For now, the default values have been chosen")
             water_table = 1
             cpt = correlations.qt(cpt, u2=False, a=0.8)
-            cpt.loc[cpt.pen<water_table].uw = 16
-            cpt.loc[cpt.pen>water_table].uw = 20
+            cpt.loc[cpt.pen<water_table].gammaSat = 16
+            cpt.loc[cpt.pen>water_table].gammaSat = 20
             cpt = correlations.sig_eff(cpt, water_table=water_table,sea_level=False)
         cpt = resample(cpt)
         
