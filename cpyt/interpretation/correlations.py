@@ -111,7 +111,7 @@ def sig_eff(df, water_table=1,sea_level=False):
                     ["qc","fs",Rf","z"]
     :water_table:   Depth of the water table relative to surface Assumed to be 1m 
                     below surface unless otherwise specified
-    :sea_level:     Height of sea_level above surface. If float is specified, water_table=0.
+    :sea_level:     Height of sea_level above seabed. If float is specified, water_table=0.
     NOTE: sig_eff assumes the CPT penetrates from the surface and no pre-drilling
     has occurred
     """

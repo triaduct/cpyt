@@ -312,7 +312,7 @@ def nesmith_2002(cpt, z_base, pile_dia, wb=0, limit_qc_avg=True,
     
     if limit_qb == True:
         # qb_lim needs to be interpolated between 7.2 and 8.62
-        wb_perc = wb/1.34
+        wb_perc = wb/1.34   # As a percentage of the maximum i.e. 1.34 MPa
         qblim = 7.2 + wb_perc*(8.62 - 7.2) 
         qbmax = min(qblim,qbmax)
 
@@ -327,7 +327,7 @@ def nesmith_2002(cpt, z_base, pile_dia, wb=0, limit_qc_avg=True,
         print("_________________________________________")
         return Qbmax
 
-def unified(cpt,z_top, z_base, closed_ended=True, 
+def unified(cpt,z_base, closed_ended=True, 
             alpha_p = None, avg_method = "lcpc",
             h=None, b=None, d_cpt=35.7E-3,
             D_inner = None, D_outer=None, 

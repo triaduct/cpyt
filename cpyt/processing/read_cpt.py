@@ -319,9 +319,12 @@ if __name__ == "__main__":
     import os
     gef_file = "CPT000000062229_IMBRO_A.gef"
 
-    g = CPT()
-    g.readGEF(gef_file)
-    df = g.asDataFrame()
+    dataDir = "C:\\Users\\kduffy\\OneDrive\\Education\\University\\03_PhD\\BB_Data\\mv2 pile test\\site investigation\\all_gef files\\"
+    for file in os.listdir(dataDir):
+        g = CPT()
+        g.readGEF(dataDir + file)
+        df = g.asDataFrame()
+        df.to_csv(dataDir + file.split(".")[:-1][0] + ".csv")
 
 
 

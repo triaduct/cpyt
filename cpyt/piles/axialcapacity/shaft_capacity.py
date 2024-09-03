@@ -37,16 +37,19 @@ from cpyt.processing.read_cpt import CPT
 
 
 def nen9997_2017(cpt, pile_type, z_top, z_base, h=np.nan, b=np.nan, pile_dia=np.nan, 
+                 clay_table7d=True,
                  limit_qs=False, excl_depths=[], alpha_s="default", result="force"):
     """
     Function which calculates the pile base capacity based on:
         :cpt:            Input dataframe of CPT data
 
         :pile_type:     Pile type
-                        Can be: "driven_precast"
-        :z_top:      Level of pile top relative to NAP
-        :z_base:      Depth of pile
-        :pile_dia:           pile_diameter of pile shaft
+                        Can be: "driven_precast", "screw_injection" or "driven_cast_in_situ"
+        :z_top:         Level of pile top relative to NAP
+        :z_base:        Depth of pile
+        :pile_dia:      pile_diameter of pile shaft
+        :clay_table7d:  Select alpha_s for clay based on Table 7D (NOTE: Isbt 
+                        required as input in :cpt:)
         :excl_depths:   List of a start and end depth, between which no shaft friction
                         is deemed to occur
         
@@ -58,9 +61,7 @@ def nen9997_2017(cpt, pile_type, z_top, z_base, h=np.nan, b=np.nan, pile_dia=np.
     
     segment_length = z_top-z_base
     
-    if "Isbt" not in cpt:
-        raise ValueError("The NEN9997-1 design method needs Isbt as an input.\nSee cpyt.correlations")
-    
+
     ## Pile Geom
     if (np.isnan(h) == True) & (np.isnan(b) == True):       # i.e. if the pile is circular
         circum = 2*np.pi*(pile_dia/2)
@@ -79,15 +80,18 @@ def nen9997_2017(cpt, pile_type, z_top, z_base, h=np.nan, b=np.nan, pile_dia=np.
                     "screw_injection": 0.009, 
                     "vibro": 0.014}
 
-
-    # Identify potential clay regions using the Isbt and Table 7d NEN9997-1 and fill in alpha_s factors
-    cpt.alpha_s.loc[(cpt.qc > 2.5) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)] = 0.03              # Note that 0.03 is the upper limit
-    cpt.alpha_s.loc[(cpt.qc < 2.5) & (cpt.qc > 2.0) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)]= 0.02*(cpt.qc-1)
-    cpt.alpha_s.loc[(cpt.qc < 2) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)] = 0.02               # Note that 0.02 is the upper limit
-    cpt.alpha_s.loc[(cpt.Isbt > 3.6)] = 0.0
-    
-    # print("NOTE: constant alpha_s for clay layers has been applied")
-    # cpt.alpha_s.loc[cpt.qc < 2] = 0.025
+    if clay_table7d:
+        if "Isbt" not in cpt:
+            raise ValueError("Isbt needed as an input if clay_table7d = True. See cpyt.correlations")
+        
+        # Identify potential clay regions using the Isbt and Table 7d NEN9997-1 and fill in alpha_s factors
+        cpt.alpha_s.loc[(cpt.qc > 2.5) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)] = 0.03              # Note that 0.03 is the upper limit
+        cpt.alpha_s.loc[(cpt.qc < 2.5) & (cpt.qc > 2.0) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)]= 0.02*(cpt.qc-1)
+        cpt.alpha_s.loc[(cpt.qc < 2) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)] = 0.02               # Note that 0.02 is the upper limit
+        cpt.alpha_s.loc[(cpt.Isbt > 3.6)] = 0.0
+    else:
+        print("NOTE: constant alpha_s for clay layers has been applied")
+        cpt.alpha_s.loc[cpt.qc < 2] = 0.025
 
     # Fill the remaining alpha_s with the alpha_s for sand
     if alpha_s == "default":
@@ -254,6 +258,7 @@ def unified_clay(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
             Fst = 1,
             D_inner = None, D_outer=None, 
             tension_load = False,
+            exclude_friction_fatigue=False,
             result="force"):
     """
     (Lehane et al., 2022)
@@ -269,6 +274,8 @@ def unified_clay(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
         :z_top:         Elevation of pile head relative to CPT
         :z_base:        Elevation of pile base relative to CPT
         :d_cpt:         Diameter of the CPT cone [m]
+        
+    NOTE: Does not account for the contribution of the pile plug
     """    
     print("_________________________________________")
     print("Calculating shaft capacity using the Unified design method for sand...\n")
@@ -287,8 +294,11 @@ def unified_clay(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     else:
         Dstar = (D_outer**2 - D_inner**2)**0.5  
         
-    cpt["h_D"] = (cpt.z - z_base)/Dstar
-    cpt.h_D.loc[cpt.h_D < 1] = 1    # i.e. max(1, h/D)
+    if exclude_friction_fatigue:
+        cpt["h_D"] = 1
+    else:
+        cpt["h_D"] = (cpt.z - z_base)/Dstar
+        cpt.h_D.loc[cpt.h_D < 1] = 1    # i.e. max(1, h/D)
     
     cpt["qs"] = 0.07 * Fst * (cpt.qt*1000) * cpt.h_D **-0.25    # kPa
     
@@ -317,6 +327,7 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
             h=None, b=None, d_cpt=35.7E-3,
             D_inner = None, D_outer=None, 
             tension_load = False,
+            exclude_friction_fatigue=False,
             result="force"):
     """
     Function which calculates the pile base capacity based on:
@@ -324,6 +335,8 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
         :z_top:         Elevation of pile head relative to CPT
         :z_base:        Elevation of pile base relative to CPT
         :d_cpt:         Diameter of the CPT cone [m]
+        
+    NOTE: Does not account for the contribution of the pile plug
     """    
     print("_________________________________________")
     print("Calculating shaft capacity using the Unified design method for clay ...\n")
@@ -362,7 +375,10 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
         A_re = 1 - PLR*(D_inner/D_eq)**2
     
     # Main calculations
-    h_D.loc[h_D < 1] = 1    # i.e. max(1, h/D)
+    if exclude_friction_fatigue:
+        h_D = 1
+    else:  
+        h_D.loc[h_D < 1] = 1    # i.e. max(1, h/D)
     sig_eff_rc = ((cpt.qc*1000)/44)*(A_re**0.3)*(h_D)**-0.4
     sig_eff_rd = ((cpt.qc*1000)/10)*((cpt.qc/(cpt.sig_eff/1000))**-0.33)*(d_cpt/D_eq)
     cpt["qs"] = ft_fc*(sig_eff_rc + sig_eff_rd)*np.tan(np.radians(delta_f))
@@ -510,7 +526,7 @@ def bustamente_gianeselli_1998(cpt, pile_type, z_top, z_base,soil_type,
     # Curves are given as points and are dependent on pile and soil type
     curves = {"Q1": np.array([[0,0.4,0.7,1.2],[0,0.02,0.03,0.04]]),
               "Q2": np.array([[0.4,1,1.8,3],[0.03,0.06,0.08,0.09]]),
-              "Q3": np.array([[0.2,1,2,3],[0.03,0.08,0.115,0.125]]),
+              "Q3": np.array([[0.19, 0.48, 1, 2, 3],[0.03, 0.05, 0.08, 0.115, 0.125]]),    # First two points are dashed lines
               "Q4": np.array([[0.5,1,2,3],[0.07,0.1,0.14,0.16]]),
               "Q5": np.array([[1,1.5,3],[0.12,0.15,0.2]])}
 
@@ -541,8 +557,6 @@ def bustamente_gianeselli_1998(cpt, pile_type, z_top, z_base,soil_type,
             if pile_type == "screw_pile_with_casing":
                 Q = "Q2"
     
-    print(soil_type)
-    print(Q)
     Q = curves[Q]
     
     # Curves originally given according to the pressuremeter. Scale the curves up 
@@ -661,7 +675,8 @@ def nbn_2022(cpt, pile_type, z_top, z_base,soil_type,
         eta_p = 1/100
         print("NO ETA_P HAS BEEN PRESCRIBED")
     
-    # Calculate unit shaft friction
+    # Calculate unit shaft friction.
+    # Basically, if no limit is included, then the eta_p has derived above is applicied
     if (soil_type == "clay") & (qc > 4.5):
         qs = 150
     elif (soil_type == "silt") & (qc > 6.0):
@@ -670,7 +685,7 @@ def nbn_2022(cpt, pile_type, z_top, z_base,soil_type,
         qs = 125
     elif (soil_type == "sand") & (qc >= 10.0) & (qc < 20.0):
         qs = 110 + 4*(qc - 10)      # NB: qc here is in MPa -- empirical correlation
-    elif (soil_type == "sand") & (qc > 20):
+    elif (soil_type == "sand") & (qc >= 20):
         qs = 150
     else: 
         qs = 1000*eta_p*qc
@@ -706,9 +721,9 @@ def nesmith_2002(cpt, z_top, z_base, pile_dia, ws=0,
     :ws: is a constant which depends on soil gradation and angularity [kPa]
     
     For soils containing uniform, rounded particles with up to 40 % fines, 
-    ws = 0 and the limiting value of qsi is 0.16 MPa. For soils with well-graded, 
-    angular particles having less than 10 % fines, ws = 0.05 MPa and the 
-    limiting value of qsi is 0.21 MPa.
+    ws = 0 and the limiting value of qsi is 160 kPa. For soils with well-graded, 
+    angular particles having less than 10 % fines, ws = 50 kPa and the 
+    limiting value of qsi is 210 kPa.
     
     Since :ws: is given on a per layer basis, it is recommended to sum up the 
     number of soil layers and input ws manually. So if we have three well-graded
@@ -734,7 +749,7 @@ def nesmith_2002(cpt, z_top, z_base, pile_dia, ws=0,
         print("Limits to qc have been imposed")
 
     cpt["alpha_s"] = 0.01       # Just one alpha_s is applied to all soil layers
-    cpt["qs"]=cpt.alpha_s*cpt.qc*1000  + ws                                # Pile shaft resistance [kPa]
+    cpt["qs"] = cpt.alpha_s*cpt.qc*1000  + ws                                # Pile shaft resistance [kPa]
         
     cpt["depth_diff"] = abs(cpt.z.diff())                     # Depth difference between CPT soundings
     cpt["Qsmax_contrib"] = cpt.depth_diff*circum*cpt.qs     # Contribution of each ~2cm layer to total shear resistance
@@ -747,7 +762,7 @@ def nesmith_2002(cpt, z_top, z_base, pile_dia, ws=0,
     
     if limit_qs == True:
         # qb_lim needs to be interpolated between 160 and 210 kPa
-        ws_perc = ws/50
+        ws_perc = ws/50         # As a percentage of the maximum i.e. 50 kPa
         qslim = 160 + ws_perc*(210 - 160) 
         qsmax = min(qslim,qsmax)
         Qsmax = qsmax * surf_area  
