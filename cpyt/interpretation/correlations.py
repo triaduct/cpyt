@@ -20,6 +20,7 @@ def qt(df, u2=False, a=None):
     a is the net area ratio and ranges from 0.70 to 0.85. Only used if pore 
     pressure was measured behind the cone tip (u2). Some typical values:
             Fugro 43.85mm 15cm2 cone: a = 0.58
+            Fugro         10cm2 cone: a = 0.75 (Most typical CPT cone offshore)
     
     Returns qt in MPa
     """
@@ -34,7 +35,7 @@ def qt(df, u2=False, a=None):
             print("The net area ratio has not been specified in deriving q_t")
             print("---> The default value of 0.8 has been assumed")
             a = 0.8
-        df["qt"] = df.qc + (df.u2/1000)*(1-a)
+        df["qt"] = df.qc + (df.u2)*(1-a)
     
     return df
 
@@ -94,7 +95,7 @@ def gammaSat(df,which="lengkeek et al_2018"):
         pa = 0.101      # [MPa]
         gamma_w = 10    # Unit weight of water[kN/m3] 
         def gammaSat_robCab(row):
-            row.gammaSat = (0.27*np.log10(row.Rf) + 0.36*np.log10(row.qt/pa) + 1.236)/gamma_w
+            row.gammaSat = (0.27*np.log10(row.Rf) + 0.36*np.log10(row.qt/pa) + 1.236)*gamma_w
             return row
         df = df.apply(gammaSat_robCab, axis=1)  
         
@@ -149,7 +150,7 @@ def sig_eff(df, water_table=1,sea_level=False):
         return row
     
     df = df.apply(sig_eff_contrib, axis=1)          # Contribution of each row to eff. stress
-    df["sig_eff"] = df.sig_eff_contrib.cumsum() + surcharge     # Result
+    df["sig_eff"] = df.sig_eff_contrib.cumsum()    # Result
     df["sig"] = df.sig_contrib.cumsum() + surcharge
     df.drop(columns=["sig_contrib","sig_eff_contrib","depth_diff"],inplace=True)
 
@@ -166,6 +167,27 @@ def qnet(df):
     
     return df
     
+#%% 
+def Qt(df):
+    if "sig_eff" not in df.columns:
+        raise ValueError("Insert sig into dataframe")
+    if "qt" not in df.columns:
+        raise ValueError("Insert qt into dataframe")
+    
+    df["Qt"] = (df.qt*1000 - df.sig)/df.sig_eff
+    
+    return df
+
+def Fr(df):
+    """Dimensionless friction ratio, output in %. (From Robertson, 2010)"""
+    if "sig_eff" not in df.columns:
+        raise ValueError("Insert sig into dataframe")
+    if "qt" not in df.columns:
+        raise ValueError("Insert qt into dataframe")
+    
+    df["Fr"] = (df.fs/(df.qt - df.sig/1000))*100
+    
+    return df
 #%%
 def Ic(df, plot=False,chart="robertson_1990_normalised"):
     """
@@ -325,14 +347,14 @@ def friction_angle(df):
     return df
 
 #%% 
-def OCR(df, which="Mayne_2005",output_sig_p = False):
+def ocr(df, which="mayne_2005"):
     if "qnet" not in df.columns:
         raise ValueError("Please create qnet")
     
-    if which == "Mayne_2005":
+    if which == "mayne_2005":
         df["sig_p_eff"] = 0.32*(df.qnet*1000)**0.72
     
-    df["OCR"] = df.sig_p_eff/df.sig_eff
+    df["ocr"] = df.sig_p_eff/df.sig_eff
     
 
     return df
@@ -356,18 +378,12 @@ def relative_density(df,which="baldi et al_1986"):
     
     if "sig_eff" not in df.columns:
         raise ValueError("Insert sig_eff into dataframe")
-    if "Isbt" not in df.columns:
-        raise ValueError("Insert Isbt into dataframe")
-
-
     
     if which == "baldi et al_1986":
         print("Assumed that we have moderately compressible, NC, unaged, uncemented,quartz sand")
         C0 = 15.7
         C2 = 2.41
         pa = 100     # Reference pressure [kPa]
-        df = sig_eff(df,water_table=1)
-        df = qt(df)
         Qtn = (df.qt/(pa/1000))/(df.sig_eff/pa)**0.5        # Normalised CPT resistance, corrected for overburden pressure
         df["Dr"] = (1/C2)*np.log(Qtn/C0)
         df.Dr = df.Dr*100           # Return as a %
@@ -376,8 +392,6 @@ def relative_density(df,which="baldi et al_1986"):
         Qc = 0.91       # Ranges from 0.91 (low compressibility) to 1.09 (high compressibility)
         t = 13000     # Aging factor (Pleistocene sands = ~13,000 years)
         pa = 100     # Reference pressure [kPa]
-        df = sig_eff(df,water_table=1)
-        df = qt(df)
         Qtn = (df.qt/(pa/1000))/(df.sig_eff/pa)**0.5        # Normalised CPT resistance, corrected for overburden pressure
         Qa = 1.2 + 0.05*np.log10(t/100)     # Aging factor
         df["OCR"] = 1
@@ -397,7 +411,6 @@ def relative_density(df,which="baldi et al_1986"):
     
     elif which == "jamiolkowski_2003_dry":
         K0 = 0.5
-        df = sig_eff(df,water_table=1)
         
         # Divided into different components to make equation clearer
         comp1 = df.qc/2.494
@@ -406,7 +419,6 @@ def relative_density(df,which="baldi et al_1986"):
 
     elif which == "jamiolkowski_2003_saturated":
         K0 = 0.5
-        df = sig_eff(df,water_table=1)
         
         # Divided into different components to make equation clearer
         comp1 = df.qc/2.494
@@ -471,5 +483,71 @@ def G0(df,method="constant alpha", alpha=5.77,v=0.2,K_g = 300):
         
     else:
         raise ValueError("Method has not been specified")
+        
+    return df
+
+#%%
+def Qtncs(df):
+    """
+    Robertson and Wride (1998), based on a large database of liquefaction case histories,
+    suggested a correction factor to correct normalized cone resistance in silty sands to an
+    equivalent clean sand value (Qtn,cs)
+    
+    From Robertson & Cabal, 2015
+    """
+    if "Ic" not in df.columns:
+        raise ValueError("Insert Ic into dataframe")
+    
+    df["Kc"] = 1.0
+    for index,row in df.iterrows():
+        if row.Ic <= 2.5:
+            if row.Ic < 1.64:
+                df.Kc.iloc[index] = 1
+            if (row.Ic > 1.64) & (row.Ic <= 2.36) & (row.Fr < 0.5):
+                df.Kc.iloc[index] = 1
+            if (row.Ic > 1.64) & (row.Ic <= 2.60):
+                df.Kc.iloc[index] = 5.581*row.Ic**3 - 0.403*row.Ic**4 - 21.63*row.Ic**2 + 33.75*row.Ic - 17.88
+
+        if (row.Ic > 2.50) & (row.Ic <= 2.70):
+            df.Kc.iloc[index] = 6E-7 * row.Ic**16.76
+        
+    df["Qtncs"] = df.Kc*df.Qtn
+    return df
+
+#%%
+def state_parameter(df,plot=False):
+    """"""
+    if "Qtncs" not in df.columns:
+        raise ValueError("Insert Qtncs into dataframe")
+        
+    df["state_parameter"] = 0.56 - 0.33*np.log10(df.Qtncs)
+    
+    if plot:
+        fig = plt.figure(figsize=(5,5))
+        ax = fig.gca()
+        
+        # Include Robertson chart as background; Need to make adjustments as [ax] is on a log scale
+        ax_tw_x = ax.twinx()
+        ax_tw_x.axis('off')
+        ax2 = ax_tw_x.twiny()
+        
+        img = plt.imread(imgDir + "robertson_1990_normalised_with-state-parameter" + ".PNG")
+        ax2.imshow(img,extent=[1,10,1,1000], aspect="auto")
+        ax2.axis('off')
+            
+        ax.scatter(df["Fr"],df["Qtn"],ec="k",alpha=0.6,s=10)
+
+        ax.set_xlabel(r"Normalised friction ratio, $F_r$ [%]")
+        ax.set_ylabel(r"Normalised cone resistance, $Q_{tn}$ [-]")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlim(0.1,10)
+        ax.set_ylim(1,1000)
+        # ax.ticklabel_format(useOffset=False, style='plain')    # Don't use scientific notation
+        ax.set_xticks([0.1,1,10])
+        ax.set_yticks([1,10,100,1000])
+        ax.patch.set_facecolor('None')      # No background on axis
+        ax.set_zorder(ax2.get_zorder()+1)   # Show scatter points above plot
+        plt.show()
         
     return df

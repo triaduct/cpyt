@@ -163,7 +163,7 @@ def de_boorder(cpt, pile_dia, target_depth):
     return qc_avg
 
 
-def boulanger_dejong(cpt, dia, target_depth):
+def boulanger_dejong(cpt, pile_dia, target_depth):
     """
     Method prescribed in Boulanger & DeJong (2018). Recommend averaging method
     in the Unified pile design method (Lehane et al., 2022)
@@ -182,7 +182,7 @@ def boulanger_dejong(cpt, dia, target_depth):
             
     qt_tip = cpt.qc.iloc[(cpt.z-target_depth).abs().argsort()[:2]]      # Cone resistance at :target_depth:
     cpt[["C1","C2","z50","w1","w2","w1w2","wc"]] = np.nan
-    cpt["z_norm"] = -1*(cpt.z-target_depth)/dia    # Normalised depth. -ve values are above the pile tip, +ve are below
+    cpt["z_norm"] = -1*(cpt.z-target_depth)/pile_dia    # Normalised depth. -ve values are above the pile tip, +ve are below
     
     # Equation 6
     cpt.C1.loc[cpt.z_norm >= 0] = 1

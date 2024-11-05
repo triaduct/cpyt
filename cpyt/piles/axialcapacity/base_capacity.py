@@ -51,10 +51,12 @@ def alpha_method(cpt,z_base,alpha_p, avg_method,
         pile_dia = ((area/np.pi)**0.5)*2        # Equivalent diameter
         
     if avg_method == "koppejan":
-        qc_avg = averaging_methods.koppejan(cpt, z_base, pile_dia, plot_min_path = False)
-    if avg_method == "de_boorder":
+        qc_avg = averaging_methods.koppejan(cpt, pile_dia, z_base, plot_min_path = False)
+    elif avg_method == "lcpc":
+        qc_avg = averaging_methods.lcpc(cpt, pile_dia, z_base)
+    elif avg_method == "de_boorder":
         qc_avg = averaging_methods.de_boorder(cpt, pile_dia, z_base)
-    if avg_method == "de_beer":
+    elif avg_method == "de_beer":
         qc_avg = averaging_methods.de_beer(cpt, pile_dia, z_base)
         
     qbmax = qc_avg*alpha_p    # Maximum pile tip resistance [MPa]

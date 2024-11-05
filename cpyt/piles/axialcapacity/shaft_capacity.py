@@ -89,6 +89,9 @@ def nen9997_2017(cpt, pile_type, z_top, z_base, h=np.nan, b=np.nan, pile_dia=np.
         cpt.alpha_s.loc[(cpt.qc < 2.5) & (cpt.qc > 2.0) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)]= 0.02*(cpt.qc-1)
         cpt.alpha_s.loc[(cpt.qc < 2) & (cpt.Isbt > 2.95) & (cpt.Isbt < 3.6)] = 0.02               # Note that 0.02 is the upper limit
         cpt.alpha_s.loc[(cpt.Isbt > 3.6)] = 0.0
+        
+        # Set alpha_s = 0 for areas where there's peat (set an arbitrary Rf = 6)
+        cpt.alpha_s.loc[cpt.Rf > 5] = 0
     else:
         print("NOTE: constant alpha_s for clay layers has been applied")
         cpt.alpha_s.loc[cpt.qc < 2] = 0.025
@@ -278,7 +281,7 @@ def unified_clay(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     NOTE: Does not account for the contribution of the pile plug
     """    
     print("_________________________________________")
-    print("Calculating shaft capacity using the Unified design method for sand...\n")
+    print("Calculating shaft capacity using the Unified design method for clay...\n")
     
     if "qt" not in cpt.columns:
         raise ValueError("The Unified design method needs qt as an input.\nSee cpyt.correlations")
@@ -295,12 +298,13 @@ def unified_clay(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
         Dstar = (D_outer**2 - D_inner**2)**0.5  
         
     if exclude_friction_fatigue:
-        cpt["h_D"] = 1
+        friction_fatigue = 1
     else:
         cpt["h_D"] = (cpt.z - z_base)/Dstar
         cpt.h_D.loc[cpt.h_D < 1] = 1    # i.e. max(1, h/D)
+        friction_fatigue = cpt.h_D **-0.25 
     
-    cpt["qs"] = 0.07 * Fst * (cpt.qt*1000) * cpt.h_D **-0.25    # kPa
+    cpt["qs"] = 0.07 * Fst * (cpt.qt*1000) * friction_fatigue   # kPa
     
     # Return result
     cpt["depth_diff"] = abs(cpt.z.diff())                   # Depth difference between CPT soundings
@@ -376,10 +380,11 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     
     # Main calculations
     if exclude_friction_fatigue:
-        h_D = 1
+        friction_fatigue = 1
     else:  
         h_D.loc[h_D < 1] = 1    # i.e. max(1, h/D)
-    sig_eff_rc = ((cpt.qc*1000)/44)*(A_re**0.3)*(h_D)**-0.4
+        friction_fatigue = (h_D)**-0.4
+    sig_eff_rc = ((cpt.qc*1000)/44)*(A_re**0.3)*friction_fatigue
     sig_eff_rd = ((cpt.qc*1000)/10)*((cpt.qc/(cpt.sig_eff/1000))**-0.33)*(d_cpt/D_eq)
     cpt["qs"] = ft_fc*(sig_eff_rc + sig_eff_rd)*np.tan(np.radians(delta_f))
     

@@ -38,8 +38,6 @@ def alm_and_hamre(cpt,z_base, closed_ended=True,
     """
     
     """
-    
-    
     if "sig_eff" not in cpt.columns:
         raise ValueError("The Alm & Hamre SRD method needs sig_eff as an input.\nSee cpyt.correlations")
     
@@ -83,10 +81,21 @@ def unified_sand(cpt,z_base, closed_ended=True,
     """
     Specify equivalent diameter area if square pile
     
-    Generic method
+    From Lehane et al., 2022
+    
+    Function which calculates the pile base capacity based on:
+        :cpt:           Input dataframe of CPT data
+        :z_top:         Elevation of pile head relative to CPT
+        :z_base:        Elevation of pile base relative to CPT
+        :d_cpt:         Diameter of the CPT cone [m]
+        
+    Due to the inertia of the pile lplug, a phase shift occurs between the pile wall
+    and the internal soil plug. Therefore, piles greater than 1.5m in diameter are
+    typically full-coring. For piles with 0.75m <= D <= 1.5m, the plug length ratio (PLR)
+    is used.     
     """
     print("_________________________________________")
-    print("Calculating base capacity using the Unified method for sand...\n")
+    print("Calculating the base SRD using the Unified method for sand...\n")
     
     ## Pile Geometry
     if (h==None) & (b==None):       # i.e. if the pile is circular

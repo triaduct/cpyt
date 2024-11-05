@@ -36,9 +36,9 @@ class CPT:
         self.qc = []                # Cone resistance           [MPa]
         self.fs = []                # Sleeve resistance         [MPa]
         self.Rf = []                # Friction ratio            [%]
-        self.u1 = []                # Pore water pressure u2    [MPa]
+        self.u1 = []                # Pore water pressure u1    [MPa]
         self.u2 = []                # Pore water pressure u2    [MPa]
-        self.u3 = []                # Pore water pressure u2    [MPa]
+        self.u3 = []                # Pore water pressure u3    [MPa]
         self.time = []              # Time [s]
         self.incl = []              # Absolute inclination of cone [degrees]
         self.incl_x = []            # Inclination of cone in x direction [degrees]
@@ -160,7 +160,6 @@ class CPT:
                     if dtype in GEF_COL_DTYPE:
                         self.__dict__[GEF_COL_DTYPE[dtype]].append(float(args[col_id]))     # Appends to class attribute based on dtype
  
-
             if line.find('#EOH') > -1:
                 if _check_header():
                     EOH = True
@@ -185,7 +184,9 @@ class CPT:
         for prop in GEF_COL_DTYPE.values():
             if self.__dict__[prop] == []:
                 self.__dict__[prop] = np.empty(len(self.z))            # self.z will always be filled
-                
+                self.__dict__[prop][:] = np.nan
+            
+
         ## Correct for inclination
         if self.corr_z == False:        # If this hasn't been calculated by GEF software already
             # If total elevation present
@@ -317,14 +318,34 @@ class CPT:
 #%%
 if __name__ == "__main__":
     import os
-    gef_file = "CPT000000062229_IMBRO_A.gef"
 
-    dataDir = "C:\\Users\\kduffy\\OneDrive\\Education\\University\\03_PhD\\BB_Data\\mv2 pile test\\site investigation\\all_gef files\\"
-    for file in os.listdir(dataDir):
+    gefDir = ""
+    dataDir = ""
+    
+    cpt=[]
+    x=[]
+    y=[]
+    z=[]
+    filename=[]
+    has_u2=[]
+    
+    for file in os.listdir(gefDir):
         g = CPT()
-        g.readGEF(dataDir + file)
+        g.readGEF(gefDir + file)
         df = g.asDataFrame()
-        df.to_csv(dataDir + file.split(".")[:-1][0] + ".csv")
+        df.to_csv(dataDir + g.cpt + ".csv")
 
-
+        cpt.append(g.cpt)
+        x.append(g.x0)
+        y.append(g.y0)
+        z.append(g.z0)
+        filename.append(g.cpt + ".csv")
+        
+        if len(df.u2.dropna()) == 0:
+            has_u2.append(False)
+        else:
+            has_u2.append(True)
+        
+    cpt_coords = pd.DataFrame({"cpt":cpt,"x0":x,"y0":y,"z0":z,"filename":filename,"has_u2":has_u2})
+    cpt_coords.to_csv(dataDir+"cpt-coordinates.csv")
 

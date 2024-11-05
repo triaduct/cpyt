@@ -52,7 +52,7 @@ def alm_and_hamre(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     NOTE: Does not account for the contribution of the pile plug
     """    
     print("_________________________________________")
-    print("Calculating shaft capacity using the Unified design method for clay ...\n")
+    print("Calculating shaft SRD using the Unified design method for clay ...\n")
     
     if "sig_eff" not in cpt.columns:
         raise ValueError("The Alm & Hamre SRD method needs sig_eff as an input.\nSee cpyt.correlations")
@@ -98,7 +98,7 @@ def alm_and_hamre(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     return Qsmax
 
 def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True, 
-            material="concrete",
+            material="concrete", alpha=0.70,
             h=None, b=None, d_cpt=35.7E-3,
             D_inner = None, D_outer=None, 
             exclude_friction_fatigue=False):
@@ -110,11 +110,17 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
         :z_top:         Elevation of pile head relative to CPT
         :z_base:        Elevation of pile base relative to CPT
         :d_cpt:         Diameter of the CPT cone [m]
+        :alpha:         Reduction factor to account for pile aging (=0.70 in paper)
         
+    Due to the inertia of the pile lplug, a phase shift occurs between the pile wall
+    and the internal soil plug. Therefore, piles greater than 1.5m in diameter are
+    typically full-coring. For piles with 0.75m <= D <= 1.5m, the plug length ratio (PLR)
+    is used. 
+    
     NOTE: Does not account for the contribution of the pile plug
     """    
     print("_________________________________________")
-    print("Calculating shaft capacity using the Unified design method for clay ...\n")
+    print("Calculating the shaft SRD using the Unified design method for sand ...\n")
     
     if "sig_eff" not in cpt.columns:
         raise ValueError("The Unified SRD method needs sig_eff as an input.\nSee cpyt.correlations")
@@ -135,7 +141,7 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
      
     h_D = (cpt.z - z_base)/D_eq
     delta_f_dict = {"concrete": 29,"steel": 29}
-    delta_f = delta_f_dict[material]    # degrees
+    delta_f = np.radians(delta_f_dict[material])   # radians
     
     if closed_ended == True:
         A_re = 1
@@ -145,13 +151,14 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     
     # Main calculations
     if exclude_friction_fatigue:
-        h_D = 1
+        friction_fatigue = 1
     else:  
         h_D.loc[h_D < 1] = 1    # i.e. max(1, h/D)
+        friction_fatigue = (h_D)**-0.4
         
-    sig_eff_rc = ((cpt.qc*1000)/44)*(A_re**0.3)*(h_D)**-0.4
+    sig_eff_rc = ((cpt.qc*1000)/44)*(A_re**0.3)*friction_fatigue
     sig_eff_rd = ((cpt.qc*1000)/10)*(((cpt.qc*1000)/cpt.sig_eff)**-0.33)*(d_cpt/D_eq)
-    cpt["qs"] = (sig_eff_rc + sig_eff_rd)*np.tan(np.radians(delta_f))
+    cpt["qs"] = alpha * np.tan(delta_f) * (sig_eff_rc + sig_eff_rd) 
     
     # Return result
     cpt["depth_diff"] = abs(cpt.z.diff())                   # Depth difference between CPT soundings
