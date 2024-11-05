@@ -456,7 +456,7 @@ def G0(df,method="constant alpha", alpha=5.77,v=0.2,K_g = 300):
         if v == 0.2:
             print("A Poisson's ratio of 0.2 for sand has been assumed")
             
-        E = 0.015*(10**(0.55*df.Ic+1.68))*(df.qt-df.sig)
+        E = 0.015*(10**(0.55*df.Ic+1.68))*(df.qt-df.sig/1000)
         df["G0"] = E/(2*(1+v))
     
     elif method == "schnaid et al_2004":
