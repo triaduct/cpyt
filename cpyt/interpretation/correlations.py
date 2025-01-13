@@ -163,7 +163,7 @@ def qnet(df):
     if "qt" not in df.columns:
         raise ValueError("Insert qt into dataframe")
     
-    df["qnet"] = (df.qt*1000 - df.sig)/1000
+    df["qnet"] = (df.qt - df.sig/1000)
     
     return df
     
@@ -404,7 +404,10 @@ def relative_density(df,which="baldi et al_1986"):
         # df = qt(df)
         # df = sig_eff(df,water_table=4)
         pa = 100     # Reference pressure [kPa]
-        Qtn = (df.qt/(pa/1000))/(df.sig_eff/pa)**0.5        # Normalised CPT resistance, corrected for overburden pressure
+        
+        df["qnet"] = (df.qt - df.sig/1000)
+        
+        Qtn = (df.qnet/(pa/1000))/(df.sig_eff/pa)**0.5        # Normalised CPT resistance, corrected for overburden pressure
         
         df["Dr"] = np.sqrt(Qtn/350)
         df.Dr = df.Dr*100           # Return as a %

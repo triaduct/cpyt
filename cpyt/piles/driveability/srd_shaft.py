@@ -45,8 +45,9 @@ def alm_and_hamre(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     
     Function which calculates the pile base capacity based on:
         :cpt:           Input dataframe of CPT data
-        :z_top:         Elevation of pile head relative to CPT
-        :z_base:        Elevation of pile base relative to CPT
+        :z_top_inc:         Elevation of pile head relative to 
+        :z_base_inc:    Bottom of the increment being considerd
+        :z_base:        Elevation of pile base relative to CPT. Used for friction fatigue h/D
         :d_cpt:         Diameter of the CPT cone [m]
         
     NOTE: Does not account for the contribution of the pile plug
@@ -89,7 +90,7 @@ def alm_and_hamre(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     cpt["Qsmax"] = cpt.Qsmax_contrib.cumsum()
 
     cpt.reset_index(drop=True,inplace=True)
-    near_z_ix = cpt.z.sub(z_base).abs().idxmin()        # Index of row with depth closest to pile depth
+    near_z_ix = cpt.z.sub(z_base_inc).abs().idxmin()        # Index of row with depth closest to pile depth
     Qsmax = cpt.Qsmax.iloc[near_z_ix]                   # Shaft capacity in kN
     qsmax = Qsmax/surf_area                             # Shaft capacity in kPa
     
@@ -107,8 +108,9 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     
     Function which calculates the pile base capacity based on:
         :cpt:           Input dataframe of CPT data
-        :z_top:         Elevation of pile head relative to CPT
-        :z_base:        Elevation of pile base relative to CPT
+        :z_top_inc:         Elevation of pile head relative to 
+        :z_base_inc:    Bottom of the increment being considerd
+        :z_base:        Elevation of pile base relative to CPT. Used for friction fatigue h/D
         :d_cpt:         Diameter of the CPT cone [m]
         :alpha:         Reduction factor to account for pile aging (=0.70 in paper)
         
@@ -166,7 +168,7 @@ def unified_sand(cpt, z_top_inc, z_base_inc, z_base, closed_ended=True,
     cpt["Qsmax"] = cpt.Qsmax_contrib.cumsum()
 
     cpt.reset_index(drop=True,inplace=True)
-    near_z_ix = cpt.z.sub(z_base).abs().idxmin()        # Index of row with depth closest to pile depth
+    near_z_ix = cpt.z.sub(z_base_inc).abs().idxmin()        # Index of row with depth closest to pile depth
     Qsmax = cpt.Qsmax.iloc[near_z_ix]                   # Shaft capacity in kN
     qsmax = Qsmax/surf_area                             # Shaft capacity in kPa
     
